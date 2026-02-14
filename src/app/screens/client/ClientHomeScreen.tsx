@@ -20,7 +20,7 @@ export function ClientHomeScreen({
   onWorkoutClick,
 }: ClientHomeScreenProps) {
   const { user } = useAuth();
-  const firstName = user?.name.split(" ")[0] || "Usuario";
+  const firstName = user?.email?.split("@")[0] || "Usuario";
   const progress = clientData.weeklyProgress;
   const coach = clientData.coach;
   const userPlan = clientData.plan;
@@ -130,7 +130,7 @@ export function ClientHomeScreen({
         {/* Botón para crear historia del gym */}
         <GymStoryGenerator 
           metrics={progress}
-          userName={user?.name || "Usuario"}
+          userName={user?.email || "Usuario"}
         />
 
         {/* Próximos entrenamientos */}

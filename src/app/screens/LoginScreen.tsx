@@ -38,9 +38,9 @@ export function LoginScreen() {
         <div className="w-20 h-20 rounded-2xl bg-primary flex items-center justify-center mb-4">
           <Dumbbell className="w-10 h-10 text-white" />
         </div>
-        <h1 className="mb-2">Primo Gym App</h1>
+        <h1 className="mb-2">Spotter - Gym App</h1>
         <p className="text-[15px] text-gray-600 text-center">
-          Tu entrenamiento, siempre contigo
+          Nunca solo, siempre a tu lado
         </p>
       </div>
 

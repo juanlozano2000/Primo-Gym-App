@@ -1,12 +1,12 @@
 
-    # Primo Gym App Design
+    # Spotter Gym App Design
 
-    This is a code bundle for Primo Gym App Design. The original project is available at https://www.figma.com/design/RudFFiedxlfNpw0Rh2fOG9/Primo-Gym-App-Design.
+    This is a code bundle for Spotter Gym App Design. The original project is available at https://www.figma.com/design/RudFFiedxlfNpw0Rh2fOG9/Primo-Gym-App-Design.
 
     ## Project structure
 
     ```text
-    Primo Gym App Design/
+    Spotter Gym App Design/
     ├─ ATTRIBUTIONS.md
     ├─ index.html
     ├─ package.json

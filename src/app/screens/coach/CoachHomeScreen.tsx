@@ -3,8 +3,10 @@ import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
 import { MetricChip } from "../../components/MetricChip";
 import { ClientListItem } from "../../components/ClientListItem";
-import { useAuth } from "../../context/AuthContext";
 import { coachData } from "../../data/mockData";
+import { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase.js';
 
 interface CoachHomeScreenProps {
   onNavigateToClients: () => void;
@@ -17,9 +19,31 @@ export function CoachHomeScreen({
   onClientClick,
   onCreatePlan,
 }: CoachHomeScreenProps) {
-  const { user } = useAuth();
-  const firstName = user?.name.split(" ")[0] || "Entrenador";
+  const { session } = useAuth(); // Obtenemos la sesión actual
+  const [coachName, setCoachName] = useState('Entrenador'); // Valor por defecto mientras carga
   const summary = coachData.dailySummary;
+
+  useEffect(() => {
+    if (session?.user.id) {
+      getProfile();
+    }
+  }, [session]);
+
+  const getProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles') // Tu tabla de la BD
+        .select('full_name')
+        .eq('id', session?.user.id)
+        .single();
+
+      if (data) {
+        setCoachName(data.full_name.split(' ')[0]); // Tomamos solo el primer nombre
+      }
+    } catch (error) {
+      console.log('Error cargando perfil:', error);
+    }
+  };
   
   // Clientes con alertas
   const clientsWithAlerts = coachData.clients.filter((c) => c.hasAlert);
@@ -31,7 +55,7 @@ export function CoachHomeScreen({
       <div className="px-4 py-6 space-y-6">
         {/* Saludo */}
         <div>
-          <h1 className="mb-1">Hola, {firstName} 👋</h1>
+          <h1 className="mb-1">Hola, {coachName} 👋</h1>
           <p className="text-[15px] text-gray-600">
             Resumen de tu jornada
           </p>

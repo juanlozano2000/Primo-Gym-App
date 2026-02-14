@@ -99,11 +99,11 @@ export function ClientAccountScreen() {
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white">
               <span className="text-[24px] font-bold">
-                {user?.name.charAt(0).toUpperCase()}
+                {user?.email.charAt(0).toUpperCase()}
               </span>
             </div>
             <div className="flex-1">
-              <h3 className="mb-1">{user?.name}</h3>
+              <h3 className="mb-1">{user?.email.split("@")[0]}</h3>
               <p className="text-[14px] text-gray-600">{user?.email}</p>
             </div>
           </div>

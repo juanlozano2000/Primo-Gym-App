@@ -176,7 +176,7 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       // Logo/Nombre del gym
       ctx.fillStyle = "#5B2C91";
       ctx.font = "bold 72px system-ui, -apple-system, sans-serif";
-      ctx.fillText("PRIMO GYM", width / 2, height - 140);
+      ctx.fillText("Spotter GYM", width / 2, height - 140);
 
       // Línea decorativa
       ctx.strokeStyle = "#FF6B35";
@@ -198,7 +198,7 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
   const handleDownload = () => {
     if (generatedStory) {
       const link = document.createElement("a");
-      link.download = `primo-gym-${Date.now()}.png`;
+      link.download = `spotter-gym-${Date.now()}.png`;
       link.href = generatedStory;
       link.click();
     }
