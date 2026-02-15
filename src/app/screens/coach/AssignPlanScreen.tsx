@@ -21,6 +21,7 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
   const [searchQuery, setSearchQuery] = useState("");
 
   const clients = coachData.clients;
+  const hasExercises = planData.exercises && planData.exercises.length > 0;
 
   const filteredClients = clients.filter(client =>
     client.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -69,6 +70,32 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
       <AppBar title="Asignar Plan" onBack={onBack} />
 
       <div className="px-4 py-6 space-y-6">
+        {/* Paso actual */}
+        {hasExercises ? (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1 bg-primary rounded-full" />
+              <div className="flex-1 h-1 bg-primary rounded-full" />
+            </div>
+            <div>
+              <p className="text-[13px] text-gray-600 mb-1">Paso 2 de 2</p>
+              <h2 className="text-[20px] font-semibold">Asignar Plan</h2>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1 bg-primary rounded-full" />
+              <div className="flex-1 h-1 bg-primary rounded-full" />
+              <div className="flex-1 h-1 bg-primary rounded-full" />
+            </div>
+            <div>
+              <p className="text-[13px] text-gray-600 mb-1">Paso 3 de 3</p>
+              <h2 className="text-[20px] font-semibold">Asignar Plan</h2>
+            </div>
+          </>
+        )}
+
         {/* Resumen del plan */}
         <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-4 text-white">
           <div className="flex items-start gap-3 mb-4">
@@ -84,9 +111,22 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
                 <span>{planData.durationWeeks} semanas</span>
                 <span>·</span>
                 <span>{planData.daysPerWeek} días/semana</span>
+                {hasExercises && (
+                  <>
+                    <span>·</span>
+                    <span>{planData.exercises!.length} ejercicios</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
+
+          {hasExercises && (
+            <div className="bg-white/10 rounded-xl p-3 mb-3">
+              <p className="text-[12px] text-white/80 font-medium mb-1">✓ Template con ejercicios precargados</p>
+              <p className="text-[11px] text-white/70">Este plan está listo para asignar</p>
+            </div>
+          )}
 
           <div className="bg-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-2">

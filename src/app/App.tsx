@@ -134,7 +134,19 @@ function AppContent() {
   };
 
   const navigateToAddWorkouts = (planData: PlanBasicInfo) => {
-    setCoachScreen({ type: "add-workouts", planData });
+    // Si el plan tiene ejercicios (template personalizado), saltar al assign
+    if (planData.exercises && planData.exercises.length > 0) {
+      // Crear un workout único con los ejercicios del template
+      const workout: WorkoutData = {
+        id: "t-template-1",
+        name: planData.name || "Workout 1",
+        description: planData.description || "Workout generado desde template",
+        dayNumber: 1,
+      };
+      setCoachScreen({ type: "assign-plan", planData, workouts: [workout] });
+    } else {
+      setCoachScreen({ type: "add-workouts", planData });
+    }
   };
 
   const navigateToAddExercises = (planData: PlanBasicInfo, workouts: WorkoutData[]) => {
@@ -262,7 +274,15 @@ function AppContent() {
 
         {coachScreen.type === "assign-plan" && (
           <AssignPlanScreen
-            onBack={() => navigateToAddExercises(coachScreen.planData, coachScreen.workouts)}
+            onBack={() => {
+              // Si tiene ejercicios (template), volver a crear plan
+              if (coachScreen.planData.exercises && coachScreen.planData.exercises.length > 0) {
+                navigateToCreatePlan();
+              } else {
+                // Si no tiene ejercicios, volver a agregar ejercicios
+                navigateToAddExercises(coachScreen.planData, coachScreen.workouts);
+              }
+            }}
             onComplete={navigateBackToCoachHome}
             planData={coachScreen.planData}
           />
