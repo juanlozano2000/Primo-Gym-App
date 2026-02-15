@@ -114,7 +114,7 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
                 {hasExercises && (
                   <>
                     <span>·</span>
-                    <span>{planData.exercises!.length} ejercicios</span>
+                    <span>{planData.exercises!.length} ejercicios del template</span>
                   </>
                 )}
               </div>
@@ -123,8 +123,10 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
 
           {hasExercises && (
             <div className="bg-white/10 rounded-xl p-3 mb-3">
-              <p className="text-[12px] text-white/80 font-medium mb-1">✓ Template con ejercicios precargados</p>
-              <p className="text-[11px] text-white/70">Este plan está listo para asignar</p>
+              <p className="text-[12px] text-white/80 font-medium mb-1">
+                ✓ Template con {planData.exercises!.length} ejercicios precargados
+              </p>
+              <p className="text-[11px] text-white/70">No necesitás editar workouts: el plan está listo para asignar.</p>
             </div>
           )}
 
