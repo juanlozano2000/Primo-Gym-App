@@ -6,7 +6,8 @@ import { CardWorkout } from "../../components/CardWorkout";
 import { GymStoryGenerator } from "../../components/GymStoryGenerator";
 import { useAuth } from "../../context/AuthContext";
 import { clientData, workouts } from "../../data/mockData";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "../../lib/supabase.js";
 
 interface ClientHomeScreenProps {
   onNavigateToWorkouts: () => void;
@@ -19,13 +20,64 @@ export function ClientHomeScreen({
   onNavigateToMetrics,
   onWorkoutClick,
 }: ClientHomeScreenProps) {
-  const { user } = useAuth();
-  const firstName = user?.email?.split("@")[0] || "Usuario";
+  const { session } = useAuth();
+  const [fullName, setFullName] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState<"Basic" | "Premium">("Basic");
+  const [coachName, setCoachName] = useState<string>(clientData.coach.name);
+  const firstName = fullName?.split(" ")[0] || "Usuario";
   const progress = clientData.weeklyProgress;
-  const coach = clientData.coach;
-  const userPlan = clientData.plan;
+  const coach = {
+    ...clientData.coach,
+    name: coachName,
+  };
   
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+
+    const fetchProfileData = async () => {
+      try {
+        // Perfil del cliente actual
+        const { data: clientProfile, error: clientError } = await supabase
+          .from("profiles")
+          .select("full_name, plan_type")
+          .eq("id", session.user.id)
+          .single();
+
+        if (!clientError && clientProfile) {
+          const name = (clientProfile as any).full_name as string | null;
+          setFullName(name ?? null);
+
+          const planType = (clientProfile as any).plan_type as string | null;
+          if (planType && planType.toLowerCase() === "premium") {
+            setUserPlan("Premium");
+          } else {
+            // Mapeamos free / null / cualquier otro valor a Basic
+            setUserPlan("Basic");
+          }
+        }
+
+        // Perfil del coach (por ahora tomamos el primer usuario con rol 'coach')
+        const { data: coachProfiles, error: coachError } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("role", "coach")
+          .limit(1);
+
+        if (!coachError && Array.isArray(coachProfiles) && coachProfiles.length > 0) {
+          const coachFullName = (coachProfiles[0] as any).full_name as string | null;
+          if (coachFullName) {
+            setCoachName(coachFullName);
+          }
+        }
+      } catch (error) {
+        console.error("Error cargando perfil de cliente/profesor:", error);
+      }
+    };
+
+    fetchProfileData();
+  }, [session]);
   
   // Próximos workouts (solo pendientes y en curso)
   const upcomingWorkouts = workouts.filter(
@@ -130,7 +182,7 @@ export function ClientHomeScreen({
         {/* Botón para crear historia del gym */}
         <GymStoryGenerator 
           metrics={progress}
-          userName={user?.email || "Usuario"}
+		  userName={fullName || firstName}
         />
 
         {/* Próximos entrenamientos */}
