@@ -7,7 +7,11 @@ import { GymStoryGenerator } from "../../components/GymStoryGenerator";
 import { useAuth } from "../../context/AuthContext";
 import { clientData, workouts } from "../../data/mockData";
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase.js";
+import { supabase } from "../../lib/supabase"; // Sin el .js por las dudas
+
+// Cache simple en módulo para evitar parpadeo de nombre al volver a esta pantalla
+let cachedClientFullName: string | null = null;
+let cachedClientUserId: string | null = null;
 
 interface ClientHomeScreenProps {
   onNavigateToWorkouts: () => void;
@@ -21,24 +25,43 @@ export function ClientHomeScreen({
   onWorkoutClick,
 }: ClientHomeScreenProps) {
   const { session } = useAuth();
-  const [fullName, setFullName] = useState<string | null>(null);
+  
+  // Estados de datos reales (nombre con cache)
+  const hasCachedForUser =
+    session?.user?.id &&
+    cachedClientUserId === session.user.id &&
+    cachedClientFullName;
+
+  const [fullName, setFullName] = useState<string | null>(
+    hasCachedForUser ? cachedClientFullName! : null
+  );
   const [userPlan, setUserPlan] = useState<"Basic" | "Premium">("Basic");
-  const [coachName, setCoachName] = useState<string>(clientData.coach.name);
-  const firstName = fullName?.split(" ")[0] || "Usuario";
-  const progress = clientData.weeklyProgress;
+  const [coachName, setCoachName] = useState<string>("Tu Entrenador");
+  const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
+  
+  // Modales
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+
+  // Variables calculadas
+  const firstName = fullName?.split(" ")[0] || "Atleta";
+  // Por ahora seguimos usando el mock para el progreso numérico hasta que conectemos los logs
+  const progress = clientData.weeklyProgress; 
+  
+  // Mezclamos datos reales (nombre) con mock (certificaciones) para que la UI no se rompa
   const coach = {
     ...clientData.coach,
     name: coachName,
   };
-  
-  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!session?.user?.email) return;
+    if (!session?.user?.id) {
+      setIsLoadingName(false);
+      return;
+    }
 
     const fetchProfileData = async () => {
       try {
-        // Perfil del cliente actual
+        // 1. Obtener Perfil del Cliente
         const { data: clientProfile, error: clientError } = await supabase
           .from("profiles")
           .select("full_name, plan_type")
@@ -46,40 +69,44 @@ export function ClientHomeScreen({
           .single();
 
         if (!clientError && clientProfile) {
-          const name = (clientProfile as any).full_name as string | null;
-          setFullName(name ?? null);
-
-          const planType = (clientProfile as any).plan_type as string | null;
-          if (planType && planType.toLowerCase() === "premium") {
-            setUserPlan("Premium");
-          } else {
-            // Mapeamos free / null / cualquier otro valor a Basic
-            setUserPlan("Basic");
-          }
+          setFullName(clientProfile.full_name);
+          cachedClientFullName = clientProfile.full_name;
+          cachedClientUserId = session.user.id;
+          
+          // Normalizar el plan (database suele ser minuscula, UI mayuscula)
+          const plan = clientProfile.plan_type?.toLowerCase() === "premium" ? "Premium" : "Basic";
+          setUserPlan(plan);
         }
 
-        // Perfil del coach (por ahora tomamos el primer usuario con rol 'coach')
-        const { data: coachProfiles, error: coachError } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("role", "coach")
-          .limit(1);
+        // 2. Obtener el Entrenador ASIGNADO (Real)
+        // Buscamos en la tabla intermedia 'coach_clients'
+        const { data: relationData, error: relationError } = await supabase
+          .from("coach_clients")
+          .select(`
+            coach:profiles!coach_id (
+              full_name
+            )
+          `)
+          .eq("client_id", session.user.id)
+          .eq("status", "active")
+          .maybeSingle(); // Usamos maybeSingle porque puede no tener coach todavía
 
-        if (!coachError && Array.isArray(coachProfiles) && coachProfiles.length > 0) {
-          const coachFullName = (coachProfiles[0] as any).full_name as string | null;
-          if (coachFullName) {
-            setCoachName(coachFullName);
-          }
+        if (!relationError && relationData && relationData.coach) {
+            // @ts-ignore (Supabase a veces confunde los tipos en joins complejos)
+            setCoachName(relationData.coach.full_name || "Tu Entrenador");
         }
+
       } catch (error) {
-        console.error("Error cargando perfil de cliente/profesor:", error);
+        console.error("Error cargando datos del home:", error);
+      } finally {
+        setIsLoadingName(false);
       }
     };
 
     fetchProfileData();
   }, [session]);
   
-  // Próximos workouts (solo pendientes y en curso)
+  // Próximos workouts (Mantenemos la lógica de mock por ahora)
   const upcomingWorkouts = workouts.filter(
     (w) => w.status === "pending" || w.status === "in-progress"
   ).slice(0, 2);
@@ -90,9 +117,10 @@ export function ClientHomeScreen({
 
   const handleWhatsAppContact = () => {
     const message = encodeURIComponent(
-      `Hola ${coach.name}! Me interesa actualizar a Premium. ¿Podrías contarme más sobre los beneficios y el precio?`
+      `Hola ${coachName}! Me interesa actualizar a Premium. ¿Podrías contarme más sobre los beneficios y el precio?`
     );
-    const phoneNumber = "5491123456789"; // Número de ejemplo
+    // Acá idealmente el número vendría de la BD del coach
+    const phoneNumber = "5491123456789"; 
     window.open(`https://wa.me/${phoneNumber}?text=${message}`, "_blank");
   };
 
@@ -103,9 +131,15 @@ export function ClientHomeScreen({
       <div className="px-4 py-6 space-y-6">
         {/* Saludo */}
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1>Hola, {firstName} 👋</h1>
-            <div className="flex items-center gap-1">
+          {isLoadingName ? (
+            <div className="space-y-2 animate-pulse mb-3">
+              <div className="h-7 w-40 rounded-lg bg-gray-200" />
+              <div className="h-4 w-52 rounded-lg bg-gray-200" />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-bold">Hola, {firstName} 👋</h1>
+              <div className="flex items-center gap-1">
               {userPlan === "Premium" ? (
                 <div className="px-3 py-1 bg-gradient-to-r from-primary to-accent rounded-full flex items-center gap-1">
                   <Crown className="w-3 h-3 text-white" />
@@ -129,16 +163,19 @@ export function ClientHomeScreen({
                   </button>
                 </>
               )}
+              </div>
             </div>
-          </div>
-          <p className="text-[15px] text-gray-600">
-            Listo para entrenar hoy
-          </p>
+          )}
+          {!isLoadingName && (
+            <p className="text-[15px] text-gray-600">
+              Listo para entrenar hoy
+            </p>
+          )}
         </div>
 
         {/* Progreso semanal */}
-        <div className="bg-white rounded-2xl p-4 border border-border">
-          <h3 className="mb-3">Progreso esta semana</h3>
+        <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+          <h3 className="font-semibold mb-3">Progreso esta semana</h3>
           
           <div className="grid grid-cols-2 gap-3 mb-4">
             <MetricChip
@@ -182,16 +219,16 @@ export function ClientHomeScreen({
         {/* Botón para crear historia del gym */}
         <GymStoryGenerator 
           metrics={progress}
-		  userName={fullName || firstName}
+          userName={fullName || firstName}
         />
 
         {/* Próximos entrenamientos */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3>Próximos entrenamientos</h3>
+            <h3 className="font-semibold">Próximos entrenamientos</h3>
             <button
               onClick={onNavigateToWorkouts}
-              className="text-[14px] text-primary font-medium"
+              className="text-[14px] text-primary font-medium hover:underline"
             >
               Ver todos
             </button>
@@ -210,7 +247,7 @@ export function ClientHomeScreen({
                 />
               ))
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-500 bg-white rounded-xl border border-dashed">
                 <p className="text-[15px]">No hay entrenamientos pendientes</p>
               </div>
             )}
@@ -225,7 +262,7 @@ export function ClientHomeScreen({
           onClick={() => setIsUpgradeModalOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl max-w-md w-full"
+            className="bg-white rounded-2xl max-w-md w-full animate-in fade-in zoom-in duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -248,7 +285,7 @@ export function ClientHomeScreen({
               {/* Tarjeta del profesor */}
               <div className="bg-gradient-to-br from-gray-50 to-white border border-border rounded-xl p-4">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white">
+                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
                     <span className="text-[18px] font-bold">
                       {coach.name.charAt(0).toUpperCase()}
                     </span>
@@ -279,7 +316,7 @@ export function ClientHomeScreen({
                 {/* Botón de WhatsApp */}
                 <button
                   onClick={handleWhatsAppContact}
-                  className="w-full h-12 bg-[#25D366] text-white font-medium rounded-xl hover:bg-[#22c55e] transition-colors active:scale-[0.98] flex items-center justify-center gap-2"
+                  className="w-full h-12 bg-[#25D366] text-white font-medium rounded-xl hover:bg-[#22c55e] transition-colors active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm"
                 >
                   <MessageCircle className="w-5 h-5" />
                   Consultar por WhatsApp
@@ -287,7 +324,7 @@ export function ClientHomeScreen({
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                <p className="text-[12px] text-blue-900">
+                <p className="text-[12px] text-blue-900 leading-relaxed">
                   💬 Tu entrenador te informará sobre precio, beneficios y cómo activar el plan Premium
                 </p>
               </div>
