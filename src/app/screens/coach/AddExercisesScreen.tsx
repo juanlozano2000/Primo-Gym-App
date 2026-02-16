@@ -394,12 +394,12 @@ export function AddExercisesScreen({
                         </div>
 
                         <div>
-                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">Peso (kg)</label>
+                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">Peso (kg o %)</label>
                           <input
                             type="text"
                             value={serie.weight || ""}
                             onChange={(e) => handleSeriesChange(index, "weight", e.target.value)}
-                            placeholder="50"
+                            placeholder="50kg o 80%"
                             className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center text-[14px]"
                           />
                         </div>
