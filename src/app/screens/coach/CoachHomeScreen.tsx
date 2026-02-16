@@ -8,6 +8,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase.js';
 
+let cachedCoachName: string | null = null;
+let cachedCoachUserId: string | null = null;
+
 interface CoachHomeScreenProps {
   onNavigateToClients: () => void;
   onClientClick: (clientId: string) => void;
@@ -20,12 +23,25 @@ export function CoachHomeScreen({
   onCreatePlan,
 }: CoachHomeScreenProps) {
   const { session } = useAuth(); // Obtenemos la sesión actual
-  const [coachName, setCoachName] = useState('Entrenador'); // Valor por defecto mientras carga
+  const hasCachedForUser = session?.user?.id && cachedCoachUserId === session.user.id && cachedCoachName;
+  const [coachName, setCoachName] = useState(hasCachedForUser ? cachedCoachName! : 'Entrenador');
+  const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
   const summary = coachData.dailySummary;
 
   useEffect(() => {
-    if (session?.user.id) {
+    const userId = session?.user?.id || null;
+
+    // Si ya tenemos cache para este usuario, no volvemos a pedirlo
+    if (userId && cachedCoachUserId === userId && cachedCoachName) {
+      setCoachName(cachedCoachName);
+      setIsLoadingName(false);
+      return;
+    }
+
+    if (userId) {
       getProfile();
+    } else {
+      setIsLoadingName(false);
     }
   }, [session]);
 
@@ -38,10 +54,15 @@ export function CoachHomeScreen({
         .single();
 
       if (data) {
-        setCoachName(data.full_name.split(' ')[0]); // Tomamos solo el primer nombre
+        const firstName = data.full_name.split(' ')[0];
+        setCoachName(firstName); // Tomamos solo el primer nombre
+        cachedCoachName = firstName;
+        cachedCoachUserId = session?.user.id ?? null;
       }
     } catch (error) {
       console.log('Error cargando perfil:', error);
+    } finally {
+      setIsLoadingName(false);
     }
   };
   
@@ -55,10 +76,19 @@ export function CoachHomeScreen({
       <div className="px-4 py-6 space-y-6">
         {/* Saludo */}
         <div>
-          <h1 className="mb-1">Hola, {coachName} 👋</h1>
-          <p className="text-[15px] text-gray-600">
-            Resumen de tu jornada
-          </p>
+          {isLoadingName ? (
+            <div className="space-y-2 animate-pulse">
+              <div className="h-7 w-40 rounded-lg bg-gray-200" />
+              <div className="h-4 w-52 rounded-lg bg-gray-200" />
+            </div>
+          ) : (
+            <>
+              <h1 className="mb-1">Hola, {coachName} 👋</h1>
+              <p className="text-[15px] text-gray-600">
+                Resumen de tu jornada
+              </p>
+            </>
+          )}
         </div>
 
         {/* Resumen del día */}
@@ -88,7 +118,7 @@ export function CoachHomeScreen({
         <div className="space-y-3">
           <h3>Acciones rápidas</h3>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <CTAButton
               variant="primary"
               icon={Plus}
@@ -96,13 +126,6 @@ export function CoachHomeScreen({
               onClick={onCreatePlan}
             >
               Crear plan
-            </CTAButton>
-            <CTAButton
-              variant="outline"
-              icon={MessageSquare}
-              fullWidth
-            >
-              Enviar mensaje
             </CTAButton>
           </div>
         </div>

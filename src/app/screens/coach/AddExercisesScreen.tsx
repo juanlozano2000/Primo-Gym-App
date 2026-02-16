@@ -14,11 +14,18 @@ interface AddExercisesScreenProps {
   workouts: WorkoutData[];
 }
 
+export interface SeriesData {
+  reps?: string;
+  weight?: string;
+  time?: string;
+  rir?: string;
+}
+
 export interface ExerciseData {
   id: string;
   name: string;
-  sets: number;
-  reps: string;
+  totalSets: number;
+  seriesData: SeriesData[];
   rest: string;
   notes: string;
 }
@@ -47,15 +54,33 @@ export function AddExercisesScreen({
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [selectedExercisePreview, setSelectedExercisePreview] = useState<ExerciseData | null>(null);
   
-  // Form state
+  // Form state - Nuevo sistema
   const [exerciseName, setExerciseName] = useState("");
-  const [sets, setSets] = useState(3);
-  const [reps, setReps] = useState("10-12");
+  const [totalSets, setTotalSets] = useState(3);
+  const [seriesData, setSeriesData] = useState<SeriesData[]>([{}, {}, {}]);
   const [rest, setRest] = useState("60");
   const [notes, setNotes] = useState("");
 
   const currentWorkout = workouts[currentWorkoutIndex];
   const currentExercises = workoutExercises.find(we => we.workoutId === currentWorkout.id)?.exercises || [];
+
+  const handleSetsChange = (sets: number) => {
+    setTotalSets(sets);
+    // Crear array de series con datos existentes o vacíos
+    const newSeriesData = Array.from({ length: sets }, (_, i) => 
+      seriesData[i] || {}
+    );
+    setSeriesData(newSeriesData);
+  };
+
+  const handleSeriesChange = (index: number, field: keyof SeriesData, value: string) => {
+    const newSeriesData = [...seriesData];
+    newSeriesData[index] = {
+      ...newSeriesData[index],
+      [field]: value || undefined
+    };
+    setSeriesData(newSeriesData);
+  };
 
   const handleAddExercise = () => {
     if (!exerciseName.trim()) {
@@ -63,11 +88,16 @@ export function AddExercisesScreen({
       return;
     }
 
+    if (totalSets < 1) {
+      toast.error("Seleccioná al menos 1 serie");
+      return;
+    }
+
     const exercise: ExerciseData = {
       id: editingId || Date.now().toString(),
       name: exerciseName,
-      sets,
-      reps,
+      totalSets,
+      seriesData,
       rest: rest + "s",
       notes,
     };
@@ -89,8 +119,8 @@ export function AddExercisesScreen({
 
   const resetForm = () => {
     setExerciseName("");
-    setSets(3);
-    setReps("10-12");
+    setTotalSets(3);
+    setSeriesData([{}, {}, {}]);
     setRest("60");
     setNotes("");
     setShowAddForm(false);
@@ -101,8 +131,8 @@ export function AddExercisesScreen({
 
   const handleEditExercise = (exercise: ExerciseData) => {
     setExerciseName(exercise.name);
-    setSets(exercise.sets);
-    setReps(exercise.reps);
+    setTotalSets(exercise.totalSets);
+    setSeriesData(exercise.seriesData);
     setRest(exercise.rest.replace("s", ""));
     setNotes(exercise.notes);
     setEditingId(exercise.id);
@@ -259,19 +289,20 @@ export function AddExercisesScreen({
           </div>
         ) : null}
 
-        {/* Formulario para agregar/editar ejercicio */}
+        {/* Formulario para agregar/editar ejercicio - NUEVO DISEÑO */}
         {showAddForm && !showExerciseLibrary && (
-          <div className="bg-white rounded-2xl p-4 border-2 border-primary space-y-3">
+          <div className="bg-white rounded-2xl p-4 border-2 border-primary space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="font-medium">{editingId ? "Editar ejercicio" : "Nuevo ejercicio"}</h4>
               <button
                 onClick={resetForm}
-                className="text-gray-500"
+                className="text-gray-500 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors"
               >
                 ✕
               </button>
             </div>
 
+            {/* Nombre del ejercicio */}
             <div>
               <label className="block text-[13px] mb-2 text-gray-700 font-medium">
                 Nombre del ejercicio *
@@ -293,37 +324,25 @@ export function AddExercisesScreen({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            {/* Cantidad de series y descanso */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[13px] mb-2 text-gray-700 font-medium">
-                  Series
+                  Cantidad de series *
                 </label>
                 <input
                   type="number"
-                  value={sets}
-                  onChange={(e) => setSets(parseInt(e.target.value) || 0)}
+                  value={totalSets}
+                  onChange={(e) => handleSetsChange(parseInt(e.target.value) || 1)}
                   min="1"
-                  max="10"
-                  className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center"
+                  max="8"
+                  className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center font-semibold text-[15px]"
                 />
               </div>
 
               <div>
                 <label className="block text-[13px] mb-2 text-gray-700 font-medium">
-                  Reps
-                </label>
-                <input
-                  type="text"
-                  value={reps}
-                  onChange={(e) => setReps(e.target.value)}
-                  placeholder="8-10"
-                  className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[13px] mb-2 text-gray-700 font-medium">
-                  Descanso
+                  Descanso entre series
                 </label>
                 <div className="relative">
                   <input
@@ -331,15 +350,89 @@ export function AddExercisesScreen({
                     value={rest}
                     onChange={(e) => setRest(e.target.value)}
                     min="0"
-                    max="300"
+                    max="600"
                     step="15"
-                    className="w-full h-11 px-3 pr-6 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center"
+                    className="w-full h-11 px-3 pr-12 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center font-semibold text-[15px]"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">s</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-500 font-medium">seg</span>
                 </div>
               </div>
             </div>
 
+            {/* Configuración por serie */}
+            {totalSets > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[13px] text-gray-700 font-medium">
+                    Configuración por serie
+                  </label>
+                  <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    Todos los campos son opcionales
+                  </span>
+                </div>
+                
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {seriesData.map((serie, index) => (
+                    <div key={index} className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-[13px] flex-shrink-0">
+                          {index + 1}
+                        </div>
+                        <span className="text-[13px] text-gray-600 font-medium">Serie {index + 1}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">Repeticiones</label>
+                          <input
+                            type="text"
+                            value={serie.reps || ""}
+                            onChange={(e) => handleSeriesChange(index, "reps", e.target.value)}
+                            placeholder="10"
+                            className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center text-[14px]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">Peso (kg)</label>
+                          <input
+                            type="text"
+                            value={serie.weight || ""}
+                            onChange={(e) => handleSeriesChange(index, "weight", e.target.value)}
+                            placeholder="50"
+                            className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center text-[14px]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">Tiempo (seg)</label>
+                          <input
+                            type="text"
+                            value={serie.time || ""}
+                            onChange={(e) => handleSeriesChange(index, "time", e.target.value)}
+                            placeholder="30"
+                            className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center text-[14px]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-gray-600 mb-1 font-medium">RIR</label>
+                          <input
+                            type="text"
+                            value={serie.rir || ""}
+                            onChange={(e) => handleSeriesChange(index, "rir", e.target.value)}
+                            placeholder="2"
+                            className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center text-[14px]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notas */}
             <div>
               <label className="block text-[13px] mb-2 text-gray-700 font-medium">
                 Notas (opcional)
@@ -381,57 +474,72 @@ export function AddExercisesScreen({
 
           <div className="space-y-2">
             {currentExercises.length > 0 ? (
-              currentExercises.map((exercise, idx) => (
-                <div
-                  key={exercise.id}
-                  className="bg-white rounded-xl p-3 border border-border"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-700 font-semibold text-[13px] flex-shrink-0">
-                      {idx + 1}
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-[15px] mb-1">{exercise.name}</h4>
-                      <div className="flex items-center gap-3 text-[13px] text-gray-600">
-                        <span>{exercise.sets} series</span>
-                        <span>·</span>
-                        <span>{exercise.reps} reps</span>
-                        <span>·</span>
-                        <span>{exercise.rest} descanso</span>
-                      </div>
-                      {exercise.notes && (
-                        <p className="text-[12px] text-gray-500 mt-1 italic">{exercise.notes}</p>
-                      )}
-                    </div>
+              currentExercises.map((exercise, idx) => {
+                // Construir resumen de las series
+                const seriesSummary = exercise.seriesData
+                  .map((s, i) => {
+                    const parts = [];
+                    if (s.reps) parts.push(`${s.reps}r`);
+                    if (s.weight) parts.push(`${s.weight}kg`);
+                    if (s.time) parts.push(`${s.time}s`);
+                    if (s.rir) parts.push(`RIR${s.rir}`);
+                    return parts.length > 0 ? parts.join(' ') : '-';
+                  })
+                  .join(' · ');
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => {
-                          setSelectedExercisePreview(exercise);
-                          setPreviewModalOpen(true);
-                        }}
-                        className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-accent transition-colors"
-                        title="Ver demo"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleEditExercise(exercise)}
-                        className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-primary transition-colors"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteExercise(exercise.id)}
-                        className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-error transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                return (
+                  <div
+                    key={exercise.id}
+                    className="bg-white rounded-xl p-3 border border-border"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-700 font-semibold text-[13px] flex-shrink-0">
+                        {idx + 1}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-[15px] mb-1">{exercise.name}</h4>
+                        <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-1">
+                          <span className="font-medium text-primary">{exercise.totalSets} series</span>
+                          <span>·</span>
+                          <span>{exercise.rest} descanso</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          {seriesSummary}
+                        </p>
+                        {exercise.notes && (
+                          <p className="text-[12px] text-gray-500 mt-1.5 italic">{exercise.notes}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            setSelectedExercisePreview(exercise);
+                            setPreviewModalOpen(true);
+                          }}
+                          className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-accent transition-colors"
+                          title="Ver demo"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEditExercise(exercise)}
+                          className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-primary transition-colors"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExercise(exercise.id)}
+                          className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-error transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="bg-gray-100 rounded-xl p-8 text-center">
                 <p className="text-[14px] text-gray-600 mb-1">
@@ -470,8 +578,8 @@ export function AddExercisesScreen({
             setSelectedExercisePreview(null);
           }}
           exerciseName={selectedExercisePreview.name}
-          sets={selectedExercisePreview.sets}
-          reps={selectedExercisePreview.reps}
+          sets={selectedExercisePreview.totalSets}
+          reps={selectedExercisePreview.seriesData.map(s => s.reps || '-').join(', ')}
           notes={selectedExercisePreview.notes}
         />
       )}

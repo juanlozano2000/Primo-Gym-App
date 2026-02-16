@@ -11,6 +11,13 @@ interface CreatePlanScreenProps {
   onContinue: (planData: PlanBasicInfo) => void;
 }
 
+interface SeriesData {
+  reps: string;
+  weight: string;
+  time?: string;
+  rir?: string;
+}
+
 export interface PlanBasicInfo {
   name: string;
   description: string;
@@ -19,8 +26,8 @@ export interface PlanBasicInfo {
   exercises?: Array<{
     id: string;
     name: string;
-    sets: number;
-    reps: string;
+    totalSets: number;
+    seriesData: SeriesData[];
     rest: string;
   }>;
 }
@@ -35,8 +42,8 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
   const [selectedExercises, setSelectedExercises] = useState<Array<{
     id: string;
     name: string;
-    sets: number;
-    reps: string;
+    totalSets: number;
+    seriesData: SeriesData[];
     rest: string;
   }> | null>(null);
   const [showExercises, setShowExercises] = useState(false);
@@ -266,33 +273,50 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
 
             {showExercises && (
               <div className="px-4 pb-4 space-y-2 border-t border-accent/20">
-                {selectedExercises.map((exercise, index) => (
-                  <div
-                    key={exercise.id}
-                    className="flex items-start gap-3 p-3 bg-white rounded-xl border border-gray-200"
-                  >
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-[12px] font-semibold text-primary">{index + 1}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-[14px] font-medium mb-1">{exercise.name}</h4>
-                      <p className="text-[12px] text-gray-600">
-                        {exercise.sets} sets × {exercise.reps} reps · {exercise.rest} descanso
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newExercises = selectedExercises.filter((e) => e.id !== exercise.id);
-                        setSelectedExercises(newExercises.length > 0 ? newExercises : null);
-                        toast.success("Ejercicio eliminado");
-                      }}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-error transition-colors flex-shrink-0"
+                {selectedExercises.map((exercise, index) => {
+                  // Construir resumen de las series
+                  const seriesSummary = exercise.seriesData
+                    .map((s) => {
+                      const parts = [];
+                      if (s.reps) parts.push(`${s.reps}r`);
+                      if (s.weight) parts.push(`${s.weight}kg`);
+                      if (s.time) parts.push(`${s.time}s`);
+                      if (s.rir) parts.push(`RIR${s.rir}`);
+                      return parts.length > 0 ? parts.join(' ') : '-';
+                    })
+                    .join(' · ');
+
+                  return (
+                    <div
+                      key={exercise.id}
+                      className="flex items-start gap-3 p-3 bg-white rounded-xl border border-gray-200"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[12px] font-semibold text-primary">{index + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-[14px] font-medium mb-1">{exercise.name}</h4>
+                        <p className="text-[12px] text-gray-600 mb-0.5">
+                          {exercise.totalSets} series · {exercise.rest} descanso
+                        </p>
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          {seriesSummary}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newExercises = selectedExercises.filter((e) => e.id !== exercise.id);
+                          setSelectedExercises(newExercises.length > 0 ? newExercises : null);
+                          toast.success("Ejercicio eliminado");
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-error transition-colors flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
