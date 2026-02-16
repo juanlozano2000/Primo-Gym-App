@@ -8,6 +8,7 @@ type AuthUser = {
   id: string;
   email: string;
   role: UserRole;
+  fullName: string;
 };
 
 type AuthContextType = {
@@ -32,7 +33,7 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Configuración: 2 horas en milisegundos
   // (2 horas * 60 minutos * 60 segundos * 1000 ms)
@@ -43,6 +44,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const baseUser: User = s.user;
     const email = baseUser.email ?? '';
+
+    // Nombre completo desde metadata, con fallback al prefijo del email
+    const metaFullName = (baseUser.user_metadata as any)?.full_name as string | undefined;
+    const fullName = metaFullName && metaFullName.trim().length > 0
+      ? metaFullName.trim()
+      : (email ? email.split('@')[0] : '');
 
     // 1) Intentar tomar el rol desde user_metadata.role si existe
     const metaRole = (baseUser.user_metadata as any)?.role;
@@ -63,20 +70,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       id: baseUser.id,
       email,
       role,
+      fullName,
     };
   };
 
   useEffect(() => {
     // 1. Lógica de Sesión de Supabase (la que ya tenías)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const loadUserProfile = async (authUser: AuthUser | null) => {
+      if (!authUser) return;
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('uid', authUser.id)
+        .single();
+
+      if (!error && data?.full_name) {
+        setUser((prev) => prev ? { ...prev, fullName: data.full_name as string } : prev);
+      }
+    };
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const mappedUser = mapSessionToUser(session);
       setSession(session);
-      setUser(mapSessionToUser(session));
+      setUser(mappedUser);
       setLoading(false);
+
+      await loadUserProfile(mappedUser);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const mappedUser = mapSessionToUser(session);
       setSession(session);
-      setUser(mapSessionToUser(session));
+      setUser(mappedUser);
+
+      await loadUserProfile(mappedUser);
     });
 
     return () => subscription.unsubscribe();
@@ -107,12 +135,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async (): Promise<void> => {
-    try {
-      await supabase.auth.signOut();
-    } finally {
-      setSession(null);
-      setUser(null);
-    }
+    console.log('Calling supabase.auth.signOut() (fire-and-forget)');
+    // Llamamos a Supabase pero no esperamos a que termine para actualizar el estado local
+    supabase.auth.signOut().catch((err) => {
+      console.error('Error en supabase.auth.signOut():', err);
+    });
+
+    console.log('Clearing local auth state (session/user)');
+    setSession(null);
+    setUser(null);
   };
 
   // 2. Lógica de Inactividad (Auto-Logout)
@@ -160,7 +191,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
 		<AuthContext.Provider value={{ session, loading, login, user, isAuthenticated: !!session, logout }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

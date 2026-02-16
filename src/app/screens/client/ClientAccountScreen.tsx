@@ -6,11 +6,12 @@ import { PremiumBanner } from "../../components/PremiumBanner";
 import { Weight, Ruler, Activity, TrendingDown, User, LogOut, Settings, Plus, X, Trash2, MessageCircle, Star } from "lucide-react";
 import { clientData } from "../../data/mockData";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase.js";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 
 export function ClientAccountScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, session } = useAuth();
   const insights = clientData.insights;
   const coach = clientData.coach;
   const prs = clientData.personalRecords;
@@ -20,6 +21,7 @@ export function ClientAccountScreen() {
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseWeight, setExerciseWeight] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [fullName, setFullName] = useState<string | null>(null);
 
   // Cargar récords del localStorage al montar
   useEffect(() => {
@@ -28,6 +30,29 @@ export function ClientAccountScreen() {
       setPersonalRecords(JSON.parse(savedPRs));
     }
   }, []);
+
+  // Cargar nombre completo desde la tabla profiles
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const fetchProfileName = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("uid", session.user.id)
+          .single();
+
+        if (!error && data?.full_name) {
+          setFullName(data.full_name as string);
+        }
+      } catch (e) {
+        console.error("Error cargando nombre del perfil:", e);
+      }
+    };
+
+    fetchProfileName();
+  }, [session]);
 
   const handleUpgradeClick = () => {
     setIsUpgradeModalOpen(true);
@@ -84,9 +109,15 @@ export function ClientAccountScreen() {
     toast.info("Contacta al administrador para cambiar de entrenador");
   };
 
-  const handleLogout = () => {
-    logout();
-    toast.success("Sesión cerrada");
+  const handleLogout = async () => {
+    try {
+      console.log("Logout button clicked");
+      await logout();
+      toast.success("Sesión cerrada");
+    } catch (e) {
+      console.error("Error al cerrar sesión:", e);
+      toast.error("No se pudo cerrar sesión");
+    }
   };
 
   return (
@@ -99,11 +130,11 @@ export function ClientAccountScreen() {
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white">
               <span className="text-[24px] font-bold">
-                {user?.email.charAt(0).toUpperCase()}
+                {(fullName || user?.fullName || user?.email || "?").charAt(0).toUpperCase()}
               </span>
             </div>
             <div className="flex-1">
-              <h3 className="mb-1">{user?.email.split("@")[0]}</h3>
+              <h3 className="mb-1">{fullName || user?.fullName || user?.email?.split("@")[0]}</h3>
               <p className="text-[14px] text-gray-600">{user?.email}</p>
             </div>
           </div>

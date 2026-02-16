@@ -48,7 +48,7 @@ export function ClientDetailScreen({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <CTAButton
               variant="primary"
               size="small"
@@ -57,14 +57,6 @@ export function ClientDetailScreen({
               fullWidth
             >
               Editar plan
-            </CTAButton>
-            <CTAButton
-              variant="outline"
-              size="small"
-              onClick={handleSendMessage}
-              fullWidth
-            >
-              Enviar mensaje
             </CTAButton>
           </div>
         </div>
