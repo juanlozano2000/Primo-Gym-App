@@ -1,4 +1,5 @@
 import { WorkoutStatus } from "../components/CardWorkout";
+import { SeriesData } from "../screens/coach/AddExercisesScreen";
 
 // Datos del cliente
 export const clientData = {
@@ -82,6 +83,7 @@ export const workouts: Array<{
     time?: string;
     rest: string;
     notes?: string;
+    seriesData?: SeriesData[]; // Nueva propiedad para detalle por serie
   }>;
 }> = [
   {
@@ -97,6 +99,13 @@ export const workouts: Array<{
         sets: 4,
         reps: "8-10",
         rest: "90s",
+        // Ejemplo con seriesData detallado (plan Premium)
+        seriesData: [
+          { reps: "10", weight: "80kg", rir: "2" },
+          { reps: "8", weight: "85kg", rir: "1" },
+          { reps: "8", weight: "85kg", rir: "2" },
+          { reps: "6", weight: "90kg", rir: "1" },
+        ],
       },
       {
         id: "e2",
@@ -104,6 +113,11 @@ export const workouts: Array<{
         sets: 3,
         reps: "10-12",
         rest: "60s",
+        seriesData: [
+          { reps: "12", weight: "70kg", rir: "2" },
+          { reps: "10", weight: "75kg", rir: "2" },
+          { reps: "10", weight: "75kg", rir: "3" },
+        ],
       },
       {
         id: "e3",
@@ -111,6 +125,11 @@ export const workouts: Array<{
         sets: 3,
         reps: "12-15",
         rest: "60s",
+        seriesData: [
+          { reps: "15", weight: "20kg", rir: "3" },
+          { reps: "12", weight: "22kg", rir: "2" },
+          { reps: "12", weight: "22kg", rir: "2" },
+        ],
       },
       {
         id: "e4",
@@ -148,6 +167,12 @@ export const workouts: Array<{
         sets: 4,
         reps: "8-10",
         rest: "90s",
+        seriesData: [
+          { reps: "10", weight: "BW", rir: "1" },
+          { reps: "8", weight: "BW", rir: "0" },
+          { reps: "8", weight: "BW", rir: "1" },
+          { reps: "6", weight: "BW", rir: "0" },
+        ],
       },
       {
         id: "e8",
@@ -155,6 +180,12 @@ export const workouts: Array<{
         sets: 4,
         reps: "8-10",
         rest: "90s",
+        seriesData: [
+          { reps: "10", weight: "80%", rir: "2" },
+          { reps: "8", weight: "85%", rir: "1" },
+          { reps: "8", weight: "85%", rir: "2" },
+          { reps: "8", weight: "80%", rir: "2" },
+        ],
       },
       {
         id: "e9",
@@ -199,6 +230,12 @@ export const workouts: Array<{
         sets: 4,
         reps: "8-10",
         rest: "120s",
+        seriesData: [
+          { reps: "10", weight: "100kg", rir: "2" },
+          { reps: "8", weight: "110kg", rir: "1" },
+          { reps: "8", weight: "110kg", rir: "2" },
+          { reps: "6", weight: "115kg", rir: "1" },
+        ],
       },
       {
         id: "e14",

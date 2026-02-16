@@ -94,25 +94,6 @@ export function LoginScreen() {
           {isLoading ? "Iniciando..." : "Iniciar sesión"}
         </CTAButton>
 
-        {/* Nota de credenciales */}
-        <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-          <p className="text-[13px] text-gray-600 mb-3">
-            <strong className="text-gray-900">Credenciales de demostración:</strong>
-          </p>
-          <div className="space-y-2 text-[13px] text-gray-700">
-            <div>
-              <p className="font-medium">Cliente:</p>
-              <p>Email: cliente@primogym.com</p>
-              <p>Contraseña: cliente123</p>
-            </div>
-            <div className="mt-2">
-              <p className="font-medium">Entrenador:</p>
-              <p>Email: entrenador@primogym.com</p>
-              <p>Contraseña: entrenador123</p>
-            </div>
-          </div>
-        </div>
-
         <p className="text-[13px] text-gray-500 text-center mt-auto">
           Las credenciales son provistas por el administrador del gimnasio
         </p>

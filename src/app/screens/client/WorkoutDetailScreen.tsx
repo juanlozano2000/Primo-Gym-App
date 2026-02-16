@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { CheckCircle2, Circle, Clock, Play, Pause, Eye } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Play, Pause, Eye, List } from "lucide-react";
 import { workouts } from "../../data/mockData";
 import { toast } from "sonner";
 import { ExercisePreviewModal } from "../../components/ExercisePreviewModal";
@@ -22,6 +22,7 @@ export function WorkoutDetailScreen({
   const [restTimer, setRestTimer] = useState(0);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<any>(null);
+  const [isSeriesDetailModalOpen, setIsSeriesDetailModalOpen] = useState(false);
 
   if (!workout || !workout.exerciseList) {
     return (
@@ -37,6 +38,7 @@ export function WorkoutDetailScreen({
   const currentExercise = workout.exerciseList[currentExerciseIndex];
   const isLastExercise = currentExerciseIndex === workout.exerciseList.length - 1;
   const isExerciseCompleted = completedExercises.includes(currentExercise.id);
+  const hasSeriesData = currentExercise.seriesData && currentExercise.seriesData.length > 0;
 
   const handleMarkAsDone = () => {
     if (!isExerciseCompleted) {
@@ -137,11 +139,15 @@ export function WorkoutDetailScreen({
             </div>
           </div>
 
-          {/* Notas */}
-          {currentExercise.notes && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-6">
-              <p className="text-[14px] text-blue-900">{currentExercise.notes}</p>
-            </div>
+          {/* Botón para ver detalle por serie (si tiene seriesData) */}
+          {hasSeriesData && (
+            <button
+              onClick={() => setIsSeriesDetailModalOpen(true)}
+              className="w-full mb-6 px-4 py-3 bg-primary/10 border border-primary/30 rounded-xl text-primary font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-primary/20 transition-all active:scale-[0.98]"
+            >
+              <List className="w-4 h-4" />
+              Ver detalle por serie
+            </button>
           )}
 
           {/* Temporizador de descanso */}
@@ -263,6 +269,83 @@ export function WorkoutDetailScreen({
         onClose={() => setIsPreviewModalOpen(false)}
         exercise={previewExercise}
       />
+
+      {/* Modal de detalle por serie */}
+      {isSeriesDetailModalOpen && hasSeriesData && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div 
+            className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] overflow-y-auto animate-in slide-in-from-bottom duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-3xl sm:rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-[16px]">{currentExercise.name}</h3>
+                  <p className="text-[13px] text-gray-600">Detalle por serie</p>
+                </div>
+                <button
+                  onClick={() => setIsSeriesDetailModalOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-500"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Tabla de series */}
+            <div className="px-6 py-4 space-y-3">
+              {currentExercise.seriesData!.map((serie, index) => (
+                <div key={index} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-[13px]">
+                      {index + 1}
+                    </div>
+                    <span className="text-[14px] font-medium text-gray-700">Serie {index + 1}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {serie.reps && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <p className="text-[11px] text-gray-600 mb-1">Repeticiones</p>
+                        <p className="text-[16px] font-bold text-gray-900">{serie.reps}</p>
+                      </div>
+                    )}
+                    {serie.weight && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <p className="text-[11px] text-gray-600 mb-1">Peso</p>
+                        <p className="text-[16px] font-bold text-gray-900">{serie.weight}</p>
+                      </div>
+                    )}
+                    {serie.time && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <p className="text-[11px] text-gray-600 mb-1">Tiempo</p>
+                        <p className="text-[16px] font-bold text-gray-900">{serie.time}s</p>
+                      </div>
+                    )}
+                    {serie.rir && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <p className="text-[11px] text-gray-600 mb-1">RIR</p>
+                        <p className="text-[16px] font-bold text-gray-900">{serie.rir}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer con botón de cerrar */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
+              <button
+                onClick={() => setIsSeriesDetailModalOpen(false)}
+                className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
