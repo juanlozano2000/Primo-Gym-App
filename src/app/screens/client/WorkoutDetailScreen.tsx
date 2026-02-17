@@ -247,7 +247,7 @@ export function WorkoutDetailScreen({
                       setPreviewExercise(exercise);
                       setIsPreviewModalOpen(true);
                     }}
-                    className={`absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 ${
+                    className={`absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
                       isCurrent
                         ? "bg-white/20 hover:bg-white/30 text-white"
                         : "bg-gray-200 hover:bg-accent/20 text-gray-700 hover:text-accent"

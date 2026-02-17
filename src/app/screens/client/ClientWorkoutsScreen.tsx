@@ -16,11 +16,19 @@ export function ClientWorkoutsScreen({
   onWorkoutClick,
 }: ClientWorkoutsScreenProps) {
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
   const coach = clientData.coach;
 
   const handleUpgradeClick = () => {
     setIsUpgradeModalOpen(true);
   };
+
+  const filteredWorkouts = workouts.filter((w) => {
+    if (filter === "all") return true;
+    if (filter === "pending") return w.status === "pending" || w.status === "in-progress";
+    if (filter === "completed") return w.status === "completed";
+    return true;
+  });
 
   const handleWhatsAppContact = () => {
     const message = encodeURIComponent(
@@ -37,13 +45,34 @@ export function ClientWorkoutsScreen({
       <div className="px-4 py-6">
         {/* Filtros rápidos (opcional) */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          <button className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-medium whitespace-nowrap">
+          <button
+            onClick={() => setFilter("all")}
+            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+              filter === "all"
+                ? "bg-primary text-white"
+                : "bg-white text-gray-700 border border-border"
+            }`}
+          >
             Todos
           </button>
-          <button className="px-4 py-2 bg-white text-gray-700 rounded-lg text-[14px] font-medium border border-border whitespace-nowrap">
+          <button
+            onClick={() => setFilter("pending")}
+            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+              filter === "pending"
+                ? "bg-primary text-white"
+                : "bg-white text-gray-700 border border-border"
+            }`}
+          >
             Pendientes
           </button>
-          <button className="px-4 py-2 bg-white text-gray-700 rounded-lg text-[14px] font-medium border border-border whitespace-nowrap">
+          <button
+            onClick={() => setFilter("completed")}
+            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+              filter === "completed"
+                ? "bg-primary text-white"
+                : "bg-white text-gray-700 border border-border"
+            }`}
+          >
             Completados
           </button>
         </div>
@@ -54,9 +83,9 @@ export function ClientWorkoutsScreen({
         </div>
 
         {/* Lista de workouts */}
-        {workouts.length > 0 ? (
+        {filteredWorkouts.length > 0 ? (
           <div className="space-y-3">
-            {workouts.map((workout) => (
+            {filteredWorkouts.map((workout) => (
               <CardWorkout
                 key={workout.id}
                 title={workout.title}
