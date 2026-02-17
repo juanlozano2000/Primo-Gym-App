@@ -4,16 +4,80 @@ import { CardInsight } from "../../components/CardInsight";
 import { Award, Star, Users, TrendingUp, LogOut, Settings, User } from "lucide-react";
 import { coachData } from "../../data/mockData";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
+import { useEffect, useState } from "react";
+
+// Cache simple para el nombre del entrenador en la pantalla de cuenta
+let cachedCoachAccountFullName: string | null = null;
+let cachedCoachAccountUserId: string | null = null;
 
 export function CoachAccountScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, session } = useAuth();
   const profile = coachData.profile;
   const metrics = profile.metrics;
 
-  const handleLogout = () => {
-    logout();
-    toast.success("Sesión cerrada");
+  const hasCachedForUser =
+    session?.user?.id &&
+    cachedCoachAccountUserId === session.user.id &&
+    cachedCoachAccountFullName;
+
+  const [fullName, setFullName] = useState<string | null>(
+    hasCachedForUser ? cachedCoachAccountFullName! : null
+  );
+  const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setIsLoadingName(false);
+      return;
+    }
+
+    if (
+      cachedCoachAccountUserId === session.user.id &&
+      cachedCoachAccountFullName
+    ) {
+      setFullName(cachedCoachAccountFullName);
+      setIsLoadingName(false);
+      return;
+    }
+
+    const fetchCoachName = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", session.user.id)
+          .single();
+
+        if (error) {
+          console.error("Error Supabase cargando nombre de coach:", error);
+        }
+
+        if (!error && data?.full_name) {
+          const name = data.full_name as string;
+          setFullName(name);
+          cachedCoachAccountFullName = name;
+          cachedCoachAccountUserId = session.user.id;
+        }
+      } catch (e) {
+        console.error("Error cargando nombre de coach (catch):", e);
+      } finally {
+        setIsLoadingName(false);
+      }
+    };
+
+    fetchCoachName();
+  }, [session]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast.success("Sesión cerrada");
+    } catch (e) {
+      console.error("Error al cerrar sesión:", e);
+      toast.error("No se pudo cerrar sesión");
+    }
   };
 
   return (
@@ -26,11 +90,15 @@ export function CoachAccountScreen() {
           <div className="flex items-center gap-4 mb-4">
             <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-white">
               <span className="text-[28px] font-bold">
-                {profile.name.charAt(0).toUpperCase()}
+                {(fullName || profile.name).charAt(0).toUpperCase()}
               </span>
             </div>
             <div className="flex-1">
-              <h2 className="mb-1">{profile.name}</h2>
+              {isLoadingName && !fullName ? (
+                <div className="h-6 w-40 rounded-lg bg-gray-200 animate-pulse mb-1" />
+              ) : (
+                <h2 className="mb-1">{fullName || profile.name}</h2>
+              )}
               <div className="flex items-center gap-1">
                 <Star className="w-4 h-4 fill-warning text-warning" />
                 <span className="text-[14px] font-semibold text-gray-900">4.9</span>
