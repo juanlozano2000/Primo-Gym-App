@@ -279,7 +279,7 @@ export const coachData = {
 
   profile: {
     name: "María González",
-    bio: "Entrenadora certificada con 8 años de experiencia en hipertrofia, fuerza y acondicionamiento funcional.",
+    bio: "Entrenador certificado con 8 años de experiencia en hipertrofia, fuerza y acondicionamiento funcional.",
     specialties: ["Hipertrofia", "Fuerza", "Acondicionamiento"],
     certifications: [
       "NSCA-CPT",

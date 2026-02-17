@@ -11,9 +11,11 @@ interface GymStoryGeneratorProps {
     totalTime: string;
   };
   userName: string;
+  gymName?: string | null; // <--- Nuevo campo opcional
+  gymLogo?: string | null; // <--- Nuevo campo opcional
 }
 
-export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps) {
+export function GymStoryGenerator({ metrics, userName, gymName, gymLogo }: GymStoryGeneratorProps) {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [generatedStory, setGeneratedStory] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -51,17 +53,19 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
     canvas.width = width;
     canvas.height = height;
 
-    // Cargar la imagen
+    // Cargar la imagen PRINCIPAL (Foto del usuario)
     const img = new Image();
+    img.crossOrigin = "anonymous"; // Importante para poder descargar después
+    
     img.onload = () => {
-      // Fondo degradado
+      // 1. Fondo degradado
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
       gradient.addColorStop(0, "#1a1a1a");
       gradient.addColorStop(1, "#0a0a0a");
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
 
-      // Calcular dimensiones de la foto para mantener proporción
+      // 2. Calcular dimensiones de la foto para mantener proporción
       const imgAspect = img.width / img.height;
       const targetHeight = height * 0.55; // 55% del alto
       let imgWidth = targetHeight * imgAspect;
@@ -75,12 +79,12 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       const imgX = (width - imgWidth) / 2;
       const imgY = 120;
 
-      // Sombra de la foto
+      // 3. Sombra de la foto
       ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
       ctx.shadowBlur = 40;
       ctx.shadowOffsetY = 20;
 
-      // Dibujar foto con bordes redondeados
+      // 4. Dibujar foto con bordes redondeados
       ctx.save();
       const radius = 32;
       ctx.beginPath();
@@ -103,11 +107,11 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
 
-      // Área de métricas
+      // 5. Área de métricas
       const metricsY = imgY + imgHeight + 80;
       const metricsHeight = 340;
       
-      // Fondo de métricas con degradado
+      // Fondo de métricas
       const metricsGradient = ctx.createLinearGradient(0, metricsY, 0, metricsY + metricsHeight);
       metricsGradient.addColorStop(0, "rgba(91, 44, 145, 0.15)");
       metricsGradient.addColorStop(1, "rgba(91, 44, 145, 0.05)");
@@ -119,7 +123,7 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       ctx.roundRect(metricsX, metricsY, metricsWidth, metricsHeight, 24);
       ctx.fill();
 
-      // Borde del área de métricas
+      // Borde métricas
       ctx.strokeStyle = "rgba(91, 44, 145, 0.3)";
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -130,7 +134,7 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       ctx.textAlign = "center";
       ctx.fillText("HOY EN EL GYM", width / 2, metricsY + 80);
 
-      // Métricas en tarjetas
+      // Tarjetas de Métricas
       const cardY = metricsY + 140;
       const cardWidth = (metricsWidth - 40) / 2;
       const cardHeight = 140;
@@ -145,7 +149,6 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       
       ctx.fillStyle = "#9ca3af";
       ctx.font = "500 32px system-ui, -apple-system, sans-serif";
-      ctx.textAlign = "center";
       ctx.fillText("SERIES", card1X + cardWidth / 2, cardY + 45);
       
       ctx.fillStyle = "#5B2C91";
@@ -171,25 +174,69 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
       ctx.fillStyle = "#ffffff";
       ctx.font = "600 48px system-ui, -apple-system, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(userName.toUpperCase(), width / 2, height - 240);
+      ctx.fillText(userName.toUpperCase(), width / 2, height - 280);
 
-      // Logo/Nombre del gym
-      ctx.fillStyle = "#5B2C91";
-      ctx.font = "bold 72px system-ui, -apple-system, sans-serif";
-      ctx.fillText("Spotter GYM", width / 2, height - 140);
+      // --- LOGICA DEL BRANDING (Logo del Gym) ---
+      
+      const drawFooter = () => {
+        // Línea decorativa final
+        ctx.strokeStyle = "#FF6B35";
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(width / 2 - 120, height - 100);
+        ctx.lineTo(width / 2 + 120, height - 100);
+        ctx.stroke();
 
-      // Línea decorativa
-      ctx.strokeStyle = "#FF6B35";
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.moveTo(width / 2 - 120, height - 100);
-      ctx.lineTo(width / 2 + 120, height - 100);
-      ctx.stroke();
+        // Guardar imagen final
+        const storyUrl = canvas.toDataURL("image/png");
+        setGeneratedStory(storyUrl);
+        setIsGenerating(false);
+      };
 
-      // Convertir a URL
-      const storyUrl = canvas.toDataURL("image/png");
-      setGeneratedStory(storyUrl);
-      setIsGenerating(false);
+      const gymDisplayName = gymName || "Spotter GYM";
+
+      if (gymLogo) {
+        // Si hay logo, lo cargamos
+        const logoImg = new Image();
+        logoImg.crossOrigin = "anonymous";
+        logoImg.src = gymLogo;
+
+        logoImg.onload = () => {
+          const logoSize = 120;
+          const logoX = (width / 2) - (logoSize / 2);
+          const logoY = height - 250;
+
+          // Dibujar logo circular
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(width / 2, logoY + (logoSize/2), logoSize / 2, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+          ctx.restore();
+
+          // Dibujar nombre del gym DEBAJO del logo
+          ctx.fillStyle = "#5B2C91";
+          ctx.font = "bold 60px system-ui, -apple-system, sans-serif";
+          ctx.fillText(gymDisplayName, width / 2, logoY + logoSize + 60);
+
+          drawFooter();
+        };
+
+        // Si falla la carga del logo, dibujamos solo texto
+        logoImg.onerror = () => {
+            ctx.fillStyle = "#5B2C91";
+            ctx.font = "bold 72px system-ui, -apple-system, sans-serif";
+            ctx.fillText(gymDisplayName, width / 2, height - 160);
+            drawFooter();
+        }
+      } else {
+        // Si no hay logo, solo texto (como antes)
+        ctx.fillStyle = "#5B2C91";
+        ctx.font = "bold 72px system-ui, -apple-system, sans-serif";
+        ctx.fillText(gymDisplayName, width / 2, height - 160);
+        drawFooter();
+      }
     };
 
     img.src = imageUrl;
@@ -214,7 +261,6 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
 
   return (
     <>
-      {/* Botón para capturar foto */}
       <CTAButton
         variant="accent"
         icon={Camera}
@@ -224,7 +270,6 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
         Crear historia del gym
       </CTAButton>
 
-      {/* Input oculto para la cámara */}
       <input
         ref={fileInputRef}
         type="file"
@@ -234,22 +279,18 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
         className="hidden"
       />
 
-      {/* Canvas oculto para generar la imagen */}
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Modal con preview de la historia generada */}
       {generatedStory && (
         <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4">
           <button
             onClick={handleClose}
             className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors"
-            aria-label="Cerrar"
           >
             <X className="w-6 h-6" />
           </button>
 
           <div className="max-w-md w-full space-y-4">
-            {/* Preview de la imagen generada */}
             <div className="bg-black rounded-2xl overflow-hidden border-2 border-primary/30">
               <img
                 src={generatedStory}
@@ -258,7 +299,6 @@ export function GymStoryGenerator({ metrics, userName }: GymStoryGeneratorProps)
               />
             </div>
 
-            {/* Botón de descarga */}
             <CTAButton
               variant="accent"
               icon={Download}

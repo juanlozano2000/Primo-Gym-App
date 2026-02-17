@@ -37,6 +37,8 @@ export function ClientHomeScreen({
   );
   const [userPlan, setUserPlan] = useState<"Basic" | "Premium">("Basic");
   const [coachName, setCoachName] = useState<string>("Tu Entrenador");
+  const [gymName, setGymName] = useState<string | null>(null);
+  const [gymLogoUrl, setGymLogoUrl] = useState<string | null>(null);
   const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
   
   // Modales
@@ -64,7 +66,7 @@ export function ClientHomeScreen({
         // 1. Obtener Perfil del Cliente
         const { data: clientProfile, error: clientError } = await supabase
           .from("profiles")
-          .select("full_name, plan_type")
+          .select("full_name, plan_type, gym_name, gym_logo_url")
           .eq("id", session.user.id)
           .single();
 
@@ -72,6 +74,8 @@ export function ClientHomeScreen({
           setFullName(clientProfile.full_name);
           cachedClientFullName = clientProfile.full_name;
           cachedClientUserId = session.user.id;
+          setGymName(clientProfile.gym_name ?? null);
+          setGymLogoUrl(clientProfile.gym_logo_url ?? null);
           
           // Normalizar el plan (database suele ser minuscula, UI mayuscula)
           const plan = clientProfile.plan_type?.toLowerCase() === "premium" ? "Premium" : "Basic";
@@ -220,6 +224,8 @@ export function ClientHomeScreen({
         <GymStoryGenerator 
           metrics={progress}
           userName={fullName || firstName}
+          gymName={gymName || undefined}
+          gymLogo={gymLogoUrl || undefined}
         />
 
         {/* Próximos entrenamientos */}
