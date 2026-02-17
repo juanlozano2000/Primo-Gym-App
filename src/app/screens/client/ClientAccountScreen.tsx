@@ -10,6 +10,10 @@ import { supabase } from "../../lib/supabase.js";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 
+// Cache simple para el nombre del cliente en la pantalla de cuenta
+let cachedClientAccountFullName: string | null = null;
+let cachedClientAccountUserId: string | null = null;
+
 export function ClientAccountScreen() {
   const { user, logout, session } = useAuth();
   const insights = clientData.insights;
@@ -21,7 +25,15 @@ export function ClientAccountScreen() {
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseWeight, setExerciseWeight] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
-  const [fullName, setFullName] = useState<string | null>(null);
+  const hasCachedForUser =
+    session?.user?.id &&
+    cachedClientAccountUserId === session.user.id &&
+    cachedClientAccountFullName;
+
+  const [fullName, setFullName] = useState<string | null>(
+    hasCachedForUser ? cachedClientAccountFullName! : null
+  );
+  const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
 
   // Cargar récords del localStorage al montar
   useEffect(() => {
@@ -33,21 +45,43 @@ export function ClientAccountScreen() {
 
   // Cargar nombre completo desde la tabla profiles
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!session?.user?.id) {
+      setIsLoadingName(false);
+      return;
+    }
+
+    // Si ya tenemos el nombre en caché para este usuario, no volvemos a pedirlo
+    if (
+      cachedClientAccountUserId === session.user.id &&
+      cachedClientAccountFullName
+    ) {
+      setFullName(cachedClientAccountFullName);
+      setIsLoadingName(false);
+      return;
+    }
 
     const fetchProfileName = async () => {
       try {
         const { data, error } = await supabase
           .from("profiles")
           .select("full_name")
-          .eq("uid", session.user.id)
+          .eq("id", session.user.id)
           .single();
 
+        if (error) {
+          console.error("Error Supabase cargando nombre de cliente:", error);
+        }
+
         if (!error && data?.full_name) {
-          setFullName(data.full_name as string);
+          const name = data.full_name as string;
+          setFullName(name);
+          cachedClientAccountFullName = name;
+          cachedClientAccountUserId = session.user.id;
         }
       } catch (e) {
         console.error("Error cargando nombre del perfil:", e);
+      } finally {
+        setIsLoadingName(false);
       }
     };
 
@@ -62,7 +96,7 @@ export function ClientAccountScreen() {
     const message = encodeURIComponent(
       `Hola ${coach.name}! Me interesa actualizar a Premium. ¿Podrías contarme más sobre los beneficios y el precio?`
     );
-    const phoneNumber = "5491123456789"; // Número de ejemplo
+    const phoneNumber = "5491138756897"; // Número de ejemplo
     window.open(`https://wa.me/${phoneNumber}?text=${message}`, "_blank");
   };
 
@@ -130,11 +164,19 @@ export function ClientAccountScreen() {
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white">
               <span className="text-[24px] font-bold">
-                {(fullName || user?.fullName || user?.email || "?").charAt(0).toUpperCase()}
+                {(fullName || user?.fullName || user?.email || "?")
+                  .charAt(0)
+                  .toUpperCase()}
               </span>
             </div>
             <div className="flex-1">
-              <h3 className="mb-1">{fullName || user?.fullName || user?.email?.split("@")[0]}</h3>
+              {isLoadingName && !fullName ? (
+                <div className="h-5 w-32 rounded-lg bg-gray-200 animate-pulse" />
+              ) : (
+                <h3 className="mb-1">
+                  {fullName || user?.fullName || user?.email?.split("@")[0]}
+                </h3>
+              )}
               <p className="text-[14px] text-gray-600">{user?.email}</p>
             </div>
           </div>
