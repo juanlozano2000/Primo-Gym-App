@@ -29,6 +29,9 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 });
 
+// Prefijo para nuestra "cookie" de caché
+const CACHE_PREFIX = 'spoter_profile_';
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -54,21 +57,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   };
 
-  // --- EFECTO 1: Manejo puro de la sesión (Cero bloqueos) ---
+  // --- EFECTO 1: Manejo puro de la sesión ---
   useEffect(() => {
     let isMounted = true;
-    console.log("[Auth] 1. Inicializando escuchador de sesión...");
 
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (isMounted) {
         setSession(initialSession);
-        // Si entra como invitado (sin sesión), apagamos la carga para mostrar el Login
         if (!initialSession) setLoading(false); 
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      console.log(`[Auth] Evento Supabase: ${_event}`);
       if (isMounted) {
         setSession(currentSession);
         if (!currentSession) setLoading(false);
@@ -81,32 +81,61 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  // --- EFECTO 2: Buscar datos a la DB (Solo corre cuando ya hay sesión estable) ---
+  // --- EFECTO 2: Buscar datos a la DB o CACHÉ ---
   useEffect(() => {
     let isMounted = true;
 
     const loadProfile = async () => {
       if (!session) return; 
 
+      const userId = session.user.id;
+      const cacheKey = `${CACHE_PREFIX}${userId}`;
+      let currentUser = mapSessionToUser(session);
+
+      if (!currentUser) return;
+
+      // 1. ⚡ Intentamos leer de la CACHÉ primero (Costo: $0, Tiempo: 0ms)
+      const cachedData = localStorage.getItem(cacheKey);
+      
+      if (cachedData) {
+        try {
+          const { fullName, role } = JSON.parse(cachedData);
+          console.log(`[Auth] ⚡ Perfil cargado desde caché local. Cero hits a BD.`);
+          currentUser.fullName = fullName;
+          currentUser.role = role as UserRole;
+          
+          if (isMounted) {
+            setUser(currentUser);
+            setLoading(false);
+          }
+          return; // 🛑 CORTAMOS ACÁ: No llamamos a Supabase
+        } catch (e) {
+          console.warn("[Auth] Caché corrupta, buscando en BD...");
+        }
+      }
+
+      // 2. 🔍 Si no hay caché (primer login en este dispositivo), vamos a la BD
       try {
-        console.log(`[Auth] 2. Consultando perfil en BD para: ${session.user.id}`);
+        console.log(`[Auth] 🔍 Buscando perfil en BD por única vez...`);
         const { data, error } = await supabase
           .from('profiles')
           .select('full_name, role')
-          .eq('id', session.user.id)
+          .eq('id', userId)
           .single();
 
         if (isMounted) {
-          let currentUser = mapSessionToUser(session);
-          if (currentUser) {
-            if (!error && data) {
-              console.log(`[Auth] 3. Perfil listo. Rol: ${data.role}`);
-              currentUser.fullName = data.full_name;
-              currentUser.role = data.role as UserRole;
-            }
-            setUser(currentUser);
+          if (!error && data) {
+            console.log(`[Auth] 💾 Guardando perfil en caché para futuros refresh.`);
+            currentUser.fullName = data.full_name;
+            currentUser.role = data.role as UserRole;
+            
+            // Guardamos los datos en el navegador para no volver a pedirlos
+            localStorage.setItem(cacheKey, JSON.stringify({
+              fullName: data.full_name,
+              role: data.role
+            }));
           }
-          // Recién acá, con el rol correcto en mano, liberamos la interfaz
+          setUser(currentUser);
           setLoading(false); 
         }
       } catch (error) {
@@ -120,14 +149,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       isMounted = false;
     };
-  }, [session]); // 🚨 La magia: este efecto reacciona a los cambios del Efecto 1
+  }, [session]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const { data: { session: newSession }, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error || !newSession) return false;
 
-      // Traemos el perfil en el acto para evitar que la UI parpadee
       const { data } = await supabase
         .from('profiles')
         .select('full_name, role')
@@ -138,6 +166,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (currentUser && data) {
         currentUser.fullName = data.full_name;
         currentUser.role = data.role as UserRole;
+        
+        // Al loguearnos, también guardamos la caché inmediatamente
+        localStorage.setItem(`${CACHE_PREFIX}${newSession.user.id}`, JSON.stringify({
+          fullName: data.full_name,
+          role: data.role
+        }));
       }
 
       setSession(newSession);
@@ -151,6 +185,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = useCallback(async (): Promise<void> => {
     try {
+      // 🧹 Limpiamos la caché de este usuario al cerrar sesión
+      if (user?.id) {
+        localStorage.removeItem(`${CACHE_PREFIX}${user.id}`);
+      }
       await supabase.auth.signOut();
     } catch (err) {
       console.error('Error en supabase.auth.signOut():', err);
@@ -158,9 +196,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setSession(null);
       setUser(null);
     }
-  }, []);
+  }, [user]);
 
-  // --- EFECTO 3: Temporizador de Inactividad (30 min) ---
+  // --- EFECTO 3: Temporizador de Inactividad ---
   useEffect(() => {
     if (!session) return;
     let timer: NodeJS.Timeout;
