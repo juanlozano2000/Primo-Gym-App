@@ -8,9 +8,6 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase'; 
 
-let cachedCoachName: string | null = null;
-let cachedCoachUserId: string | null = null;
-
 interface CoachHomeScreenProps {
   onNavigateToClients: () => void;
   onClientClick: (clientId: string) => void;
@@ -22,39 +19,41 @@ export function CoachHomeScreen({
   onClientClick,
   onCreatePlan,
 }: CoachHomeScreenProps) {
-  const { session } = useAuth();
-  
-  // Estado inicial inteligente: si ya tenemos el dato en caché, lo usamos
-  const hasCachedForUser = session?.user?.id && cachedCoachUserId === session.user.id && cachedCoachName;
-  const [coachName, setCoachName] = useState(hasCachedForUser ? cachedCoachName! : 'Entrenador');
-  const [isLoadingName, setIsLoadingName] = useState(!hasCachedForUser);
+  const { session, user } = useAuth();
+
+  // Si AuthContext ya tiene el fullName, lo usamos directo
+  const initialName = user?.fullName?.trim().split(" ")[0] || "Entrenador";
+  const [coachName, setCoachName] = useState(initialName);
+  const [isLoadingName, setIsLoadingName] = useState(!user?.fullName);
   
   const summary = coachData.dailySummary;
 
-  // 1. UN SOLO useEffect limpio para cargar los datos
+  // 1. Cargar nombre desde Supabase solo si AuthContext aún no lo trajo
   useEffect(() => {
     const userId = session?.user?.id;
 
-    // Si no hay usuario o ya tenemos el nombre en caché para ESTE usuario, no hacemos nada
-    if (!userId || (cachedCoachUserId === userId && cachedCoachName)) {
-      if (cachedCoachUserId === userId && cachedCoachName) {
-        setCoachName(cachedCoachName!);
+    // Si no hay usuario, o ya tenemos fullName desde AuthContext, no hacemos nada
+    if (!userId || user?.fullName) {
+      if (user?.fullName) {
+        const firstName = user.fullName.trim().split(" ")[0];
+        setCoachName(firstName);
         setIsLoadingName(false);
       }
       return;
     }
 
-    // Si no está en caché, vamos a buscarlo
+    // Si no vino en AuthContext, lo buscamos directamente
     getProfile(userId);
-  }, [session]); // Se ejecuta cuando cambia la sesión
+  }, [session, user?.fullName]);
 
   const getProfile = async (userId: string) => {
     try {
+      console.log('El ID exacto que le mando a Supabase es:', userId, 'Tipo:', typeof userId);
       console.log('Buscando perfil para:', userId);
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name')
-        .eq('id', userId) // Usamos 'id' correcto
+        .eq('id', userId)
         .single();
 
       if (error) {
@@ -64,9 +63,6 @@ export function CoachHomeScreen({
       if (data && data.full_name) {
         const firstName = data.full_name.split(' ')[0];
         setCoachName(firstName);
-        // Guardamos en caché para que no parpadee si volvemos a esta pantalla
-        cachedCoachName = firstName;
-        cachedCoachUserId = userId;
       }
     } catch (error) {
       console.error('Error general:', error);
