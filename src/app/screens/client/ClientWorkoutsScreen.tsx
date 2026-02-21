@@ -42,67 +42,74 @@ export function ClientWorkoutsScreen({
     <div className="min-h-screen bg-gray-50 pb-24">
       <AppBar title="Mis Workouts" onBack={onBack} />
 
-      <div className="px-4 py-6">
-        {/* Filtros rápidos (opcional) */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
-              filter === "all"
-                ? "bg-primary text-white"
-                : "bg-white text-gray-700 border border-border"
-            }`}
-          >
-            Todos
-          </button>
-          <button
-            onClick={() => setFilter("pending")}
-            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
-              filter === "pending"
-                ? "bg-primary text-white"
-                : "bg-white text-gray-700 border border-border"
-            }`}
-          >
-            Pendientes
-          </button>
-          <button
-            onClick={() => setFilter("completed")}
-            className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
-              filter === "completed"
-                ? "bg-primary text-white"
-                : "bg-white text-gray-700 border border-border"
-            }`}
-          >
-            Completados
-          </button>
-        </div>
+      <div className="px-4 py-6 max-w-5xl mx-auto">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* Columna principal: filtros + lista */}
+          <div className="flex-1">
+            {/* Filtros rápidos (opcional) */}
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+              <button
+                onClick={() => setFilter("all")}
+                className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+                  filter === "all"
+                    ? "bg-primary text-white"
+                    : "bg-white text-gray-700 border border-border"
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setFilter("pending")}
+                className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+                  filter === "pending"
+                    ? "bg-primary text-white"
+                    : "bg-white text-gray-700 border border-border"
+                }`}
+              >
+                Pendientes
+              </button>
+              <button
+                onClick={() => setFilter("completed")}
+                className={`px-4 py-2 rounded-lg text-[14px] font-medium whitespace-nowrap transition-colors ${
+                  filter === "completed"
+                    ? "bg-primary text-white"
+                    : "bg-white text-gray-700 border border-border"
+                }`}
+              >
+                Completados
+              </button>
+            </div>
 
-        {/* Banner Premium */}
-        <div className="mb-6">
-          <PremiumBanner onUpgrade={handleUpgradeClick} />
-        </div>
-
-        {/* Lista de workouts */}
-        {filteredWorkouts.length > 0 ? (
-          <div className="space-y-3">
-            {filteredWorkouts.map((workout) => (
-              <CardWorkout
-                key={workout.id}
-                title={workout.title}
-                exercises={workout.exercises}
-                duration={workout.duration}
-                status={workout.status}
-                onClick={() => onWorkoutClick(workout.id)}
+            {/* Lista de workouts */}
+            {filteredWorkouts.length > 0 ? (
+              <div className="space-y-3">
+                {filteredWorkouts.map((workout) => (
+                  <CardWorkout
+                    key={workout.id}
+                    title={workout.title}
+                    exercises={workout.exercises}
+                    duration={workout.duration}
+                    status={workout.status}
+                    onClick={() => onWorkoutClick(workout.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Dumbbell}
+                title="No hay entrenamientos"
+                description="Tu entrenador aún no te ha asignado workouts para esta semana."
               />
-            ))}
+            )}
           </div>
-        ) : (
-          <EmptyState
-            icon={Dumbbell}
-            title="No hay entrenamientos"
-            description="Tu entrenador aún no te ha asignado workouts para esta semana."
-          />
-        )}
+
+          {/* Columna lateral: Banner Premium (se mantiene debajo en mobile) */}
+          <div className="lg:w-[320px] lg:sticky lg:top-[80px]">
+            <div className="mb-6">
+              <PremiumBanner onUpgrade={handleUpgradeClick} />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Modal de Upgrade */}

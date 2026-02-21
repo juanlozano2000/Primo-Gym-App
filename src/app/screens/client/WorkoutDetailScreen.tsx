@@ -87,123 +87,126 @@ export function WorkoutDetailScreen({
     <div className="min-h-screen bg-gray-50 pb-24">
       <AppBar title={workout.title} onBack={onBack} />
 
-      <div className="px-4 py-6 space-y-6">
-        {/* Progreso */}
-        <div className="bg-white rounded-2xl p-4 border border-border">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[14px] text-gray-600 font-medium">
-              Progreso del workout
-            </span>
-            <span className="text-[14px] font-semibold text-primary">
-              {completedExercises.length}/{workout.exerciseList.length}
-            </span>
+      <div className="px-4 py-6 max-w-5xl mx-auto lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)] lg:gap-6 lg:items-start lg:space-y-0 space-y-6">
+        {/* Columna izquierda: progreso + ejercicio actual + navegación */}
+        <div className="space-y-6">
+          {/* Progreso */}
+          <div className="bg-white rounded-2xl p-4 border border-border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[14px] text-gray-600 font-medium">
+                Progreso del workout
+              </span>
+              <span className="text-[14px] font-semibold text-primary">
+                {completedExercises.length}/{workout.exerciseList.length}
+              </span>
+            </div>
+            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{
+                  width: `${(completedExercises.length / workout.exerciseList.length) * 100}%`,
+                }}
+              />
+            </div>
           </div>
-          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary transition-all duration-300"
-              style={{
-                width: `${(completedExercises.length / workout.exerciseList.length) * 100}%`,
-              }}
-            />
-          </div>
-        </div>
 
-        {/* Ejercicio actual */}
-        <div className="bg-white rounded-2xl p-6 border border-border">
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-[14px] text-gray-500 font-medium">
-              Ejercicio {currentExerciseIndex + 1} de {workout.exerciseList.length}
-            </span>
-            {isExerciseCompleted && (
-              <CheckCircle2 className="w-5 h-5 text-success" />
+          {/* Ejercicio actual */}
+          <div className="bg-white rounded-2xl p-6 border border-border">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[14px] text-gray-500 font-medium">
+                Ejercicio {currentExerciseIndex + 1} de {workout.exerciseList.length}
+              </span>
+              {isExerciseCompleted && (
+                <CheckCircle2 className="w-5 h-5 text-success" />
+              )}
+            </div>
+
+            <h2 className="mb-6">{currentExercise.name}</h2>
+
+            {/* Detalles del ejercicio */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <p className="text-[13px] text-gray-600 mb-1">Series</p>
+                <p className="text-[20px] font-bold text-gray-900">{currentExercise.sets}</p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <p className="text-[13px] text-gray-600 mb-1">Reps</p>
+                <p className="text-[20px] font-bold text-gray-900">
+                  {currentExercise.reps || currentExercise.time || "-"}
+                </p>
+              </div>
+              <div className="text-center p-4 bg-gray-50 rounded-xl">
+                <p className="text-[13px] text-gray-600 mb-1">Descanso</p>
+                <p className="text-[20px] font-bold text-gray-900">{currentExercise.rest}</p>
+              </div>
+            </div>
+
+            {/* Botón para ver detalle por serie (si tiene seriesData) */}
+            {hasSeriesData && (
+              <button
+                onClick={() => setIsSeriesDetailModalOpen(true)}
+                className="w-full mb-6 px-4 py-3 bg-primary/10 border border-primary/30 rounded-xl text-primary font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-primary/20 transition-all active:scale-[0.98]"
+              >
+                <List className="w-4 h-4" />
+                Ver detalle por serie
+              </button>
+            )}
+
+            {/* Temporizador de descanso */}
+            {isResting && (
+              <div className="mb-6 p-6 bg-accent/10 rounded-xl text-center">
+                <Clock className="w-8 h-8 text-accent mx-auto mb-2" />
+                <p className="text-[14px] text-gray-700 mb-2">Descanso</p>
+                <p className="text-[32px] font-bold text-accent">{restTimer}s</p>
+              </div>
+            )}
+
+            {/* Botón marcar como hecho */}
+            <CTAButton
+              variant={isExerciseCompleted ? "secondary" : "primary"}
+              size="large"
+              fullWidth
+              onClick={handleMarkAsDone}
+              disabled={isExerciseCompleted}
+              icon={isExerciseCompleted ? CheckCircle2 : Circle}
+            >
+              {isExerciseCompleted ? "Ejercicio completado" : "Marcar como hecho"}
+            </CTAButton>
+          </div>
+
+          {/* Navegación entre ejercicios */}
+          <div className="flex gap-3">
+            <CTAButton
+              variant="outline"
+              fullWidth
+              onClick={handlePrevious}
+              disabled={currentExerciseIndex === 0}
+            >
+              Anterior
+            </CTAButton>
+            {!isLastExercise ? (
+              <CTAButton
+                variant="secondary"
+                fullWidth
+                onClick={handleNext}
+              >
+                Siguiente
+              </CTAButton>
+            ) : (
+              <CTAButton
+                variant="accent"
+                fullWidth
+                onClick={handleFinishWorkout}
+                disabled={completedExercises.length !== workout.exerciseList.length}
+              >
+                Finalizar workout
+              </CTAButton>
             )}
           </div>
-
-          <h2 className="mb-6">{currentExercise.name}</h2>
-
-          {/* Detalles del ejercicio */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <p className="text-[13px] text-gray-600 mb-1">Series</p>
-              <p className="text-[20px] font-bold text-gray-900">{currentExercise.sets}</p>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <p className="text-[13px] text-gray-600 mb-1">Reps</p>
-              <p className="text-[20px] font-bold text-gray-900">
-                {currentExercise.reps || currentExercise.time || "-"}
-              </p>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-xl">
-              <p className="text-[13px] text-gray-600 mb-1">Descanso</p>
-              <p className="text-[20px] font-bold text-gray-900">{currentExercise.rest}</p>
-            </div>
-          </div>
-
-          {/* Botón para ver detalle por serie (si tiene seriesData) */}
-          {hasSeriesData && (
-            <button
-              onClick={() => setIsSeriesDetailModalOpen(true)}
-              className="w-full mb-6 px-4 py-3 bg-primary/10 border border-primary/30 rounded-xl text-primary font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-primary/20 transition-all active:scale-[0.98]"
-            >
-              <List className="w-4 h-4" />
-              Ver detalle por serie
-            </button>
-          )}
-
-          {/* Temporizador de descanso */}
-          {isResting && (
-            <div className="mb-6 p-6 bg-accent/10 rounded-xl text-center">
-              <Clock className="w-8 h-8 text-accent mx-auto mb-2" />
-              <p className="text-[14px] text-gray-700 mb-2">Descanso</p>
-              <p className="text-[32px] font-bold text-accent">{restTimer}s</p>
-            </div>
-          )}
-
-          {/* Botón marcar como hecho */}
-          <CTAButton
-            variant={isExerciseCompleted ? "secondary" : "primary"}
-            size="large"
-            fullWidth
-            onClick={handleMarkAsDone}
-            disabled={isExerciseCompleted}
-            icon={isExerciseCompleted ? CheckCircle2 : Circle}
-          >
-            {isExerciseCompleted ? "Ejercicio completado" : "Marcar como hecho"}
-          </CTAButton>
         </div>
 
-        {/* Navegación entre ejercicios */}
-        <div className="flex gap-3">
-          <CTAButton
-            variant="outline"
-            fullWidth
-            onClick={handlePrevious}
-            disabled={currentExerciseIndex === 0}
-          >
-            Anterior
-          </CTAButton>
-          {!isLastExercise ? (
-            <CTAButton
-              variant="secondary"
-              fullWidth
-              onClick={handleNext}
-            >
-              Siguiente
-            </CTAButton>
-          ) : (
-            <CTAButton
-              variant="accent"
-              fullWidth
-              onClick={handleFinishWorkout}
-              disabled={completedExercises.length !== workout.exerciseList.length}
-            >
-              Finalizar workout
-            </CTAButton>
-          )}
-        </div>
-
-        {/* Lista de ejercicios */}
-        <div className="bg-white rounded-2xl p-4 border border-border">
+        {/* Columna derecha: lista completa de ejercicios */}
+        <div className="bg-white rounded-2xl p-4 border border-border lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto">
           <h4 className="mb-3">Todos los ejercicios</h4>
           <div className="space-y-2">
             {workout.exerciseList.map((exercise, index) => {

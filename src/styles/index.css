@@ -23,12 +23,18 @@
   height: var(--safe-area-inset-bottom);
 }
 
-/* Mobile-first constraints - máximo 430px para mantener diseño mobile */
+/* Mobile-first constraints - mantener diseño mobile en pantallas chicas */
 body {
-  max-width: 430px;
-  margin: 0 auto;
+  margin: 0;
   position: relative;
   overflow-x: hidden;
+}
+
+@media (max-width: 480px) {
+  body {
+    max-width: 430px;
+    margin: 0 auto;
+  }
 }
 
 /* Disable text selection para mejorar experiencia táctil */
