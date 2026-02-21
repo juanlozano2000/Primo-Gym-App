@@ -56,7 +56,7 @@ export function LoginScreen() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            placeholder="tu@email.com"
+            placeholder="tu@email.com o DNI"
             required
             autoComplete="email"
           />
@@ -77,13 +77,6 @@ export function LoginScreen() {
             autoComplete="current-password"
           />
         </div>
-
-        <button
-          type="button"
-          className="text-[14px] text-primary font-medium -mt-2 text-left"
-        >
-          Olvidé mi contraseña
-        </button>
 
         <CTAButton
           variant="primary"
