@@ -34,7 +34,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 30 minutos de inactividad
   const INACTIVITY_LIMIT = 30 * 60 * 1000; 
 
   const mapSessionToUser = (s: Session | null): AuthUser | null => {
@@ -50,79 +49,97 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return {
       id: baseUser.id,
       email,
-      role: 'client', // Se asigna temporalmente, se pisa inmediatamente abajo
+      role: 'client', // Fallback temporal
       fullName,
     };
   };
 
-  // Función auxiliar para ir a buscar el perfil real a la base de datos
-  const fetchUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('full_name, role')
-      .eq('id', userId)
-      .single();
-    
-    if (!error && data) {
-      return { fullName: data.full_name as string, role: data.role as UserRole };
-    }
-    return null;
-  };
-
+  // --- EFECTO 1: Manejo puro de la sesión (Cero bloqueos) ---
   useEffect(() => {
-    const initializeAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      let currentUser = mapSessionToUser(session);
+    let isMounted = true;
+    console.log("[Auth] 1. Inicializando escuchador de sesión...");
 
-      // Si hay sesión guardada, buscamos el rol antes de sacar el "loading"
-      if (currentUser) {
-        const profile = await fetchUserProfile(currentUser.id);
-        if (profile) {
-          currentUser = { ...currentUser, fullName: profile.fullName, role: profile.role };
-        }
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (isMounted) {
+        setSession(initialSession);
+        // Si entra como invitado (sin sesión), apagamos la carga para mostrar el Login
+        if (!initialSession) setLoading(false); 
       }
-
-      setSession(session);
-      setUser(currentUser);
-      setLoading(false);
-    };
-
-    initializeAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      let currentUser = mapSessionToUser(session);
-      
-      if (currentUser) {
-        const profile = await fetchUserProfile(currentUser.id);
-        if (profile) {
-          currentUser = { ...currentUser, fullName: profile.fullName, role: profile.role };
-        }
-      }
-
-      setSession(session);
-      setUser(currentUser);
     });
 
-    return () => subscription.unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      console.log(`[Auth] Evento Supabase: ${_event}`);
+      if (isMounted) {
+        setSession(currentSession);
+        if (!currentSession) setLoading(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // --- EFECTO 2: Buscar datos a la DB (Solo corre cuando ya hay sesión estable) ---
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadProfile = async () => {
+      if (!session) return; 
+
+      try {
+        console.log(`[Auth] 2. Consultando perfil en BD para: ${session.user.id}`);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, role')
+          .eq('id', session.user.id)
+          .single();
+
+        if (isMounted) {
+          let currentUser = mapSessionToUser(session);
+          if (currentUser) {
+            if (!error && data) {
+              console.log(`[Auth] 3. Perfil listo. Rol: ${data.role}`);
+              currentUser.fullName = data.full_name;
+              currentUser.role = data.role as UserRole;
+            }
+            setUser(currentUser);
+          }
+          // Recién acá, con el rol correcto en mano, liberamos la interfaz
+          setLoading(false); 
+        }
+      } catch (error) {
+        console.error("[Auth] Error al cargar perfil:", error);
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session]); // 🚨 La magia: este efecto reacciona a los cambios del Efecto 1
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const { data: { session: newSession }, error } = await supabase.auth.signInWithPassword({ email, password });
-
       if (error || !newSession) return false;
 
-      let currentUser = mapSessionToUser(newSession);
+      // Traemos el perfil en el acto para evitar que la UI parpadee
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, role')
+        .eq('id', newSession.user.id)
+        .single();
 
-      // 🚨 LA CORRECCIÓN: Buscamos el rol real ANTES de terminar el login
-      if (currentUser) {
-        const profile = await fetchUserProfile(currentUser.id);
-        if (profile) {
-          currentUser = { ...currentUser, fullName: profile.fullName, role: profile.role };
-        }
+      let currentUser = mapSessionToUser(newSession);
+      if (currentUser && data) {
+        currentUser.fullName = data.full_name;
+        currentUser.role = data.role as UserRole;
       }
 
-      // Recién acá guardamos el usuario (ya con el rol de coach) y devolvemos true
       setSession(newSession);
       setUser(currentUser);
       return true;
@@ -143,7 +160,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
-  // Lógica de Inactividad (Auto-Logout 30 mins)
+  // --- EFECTO 3: Temporizador de Inactividad (30 min) ---
   useEffect(() => {
     if (!session) return;
     let timer: NodeJS.Timeout;

@@ -49,7 +49,7 @@ type CoachScreen =
   | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[] };
 
 function AppContent() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
   
   // Client state
   const [clientTab, setClientTab] = useState<ClientTab>("home");
@@ -161,6 +161,15 @@ function AppContent() {
     setCoachTab("home");
     setCoachScreen({ type: "home" });
   };
+
+  // Si Supabase está buscando la sesión, mostramos una carga y frenamos el renderizado
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-gray-500 animate-pulse font-medium">Cargando sesión...</p>
+      </div>
+    );
+  }
 
   // Login screen
   if (!isAuthenticated) {
