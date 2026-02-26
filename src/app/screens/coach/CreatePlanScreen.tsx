@@ -2,18 +2,17 @@ import { useState } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
 import { CreateTemplateModal } from "../../components/CreateTemplateModal";
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
-import { coachData } from "../../data/mockData";
 
 interface CreatePlanScreenProps {
   onBack: () => void;
   onContinue: (planData: PlanBasicInfo) => void;
 }
 
-interface SeriesData {
-  reps: string;
-  weight: string;
+export interface SeriesData {
+  reps?: string;
+  weight?: string;
   time?: string;
   rir?: string;
 }
@@ -25,6 +24,7 @@ export interface PlanBasicInfo {
   daysPerWeek: number;
   exercises?: Array<{
     id: string;
+    exerciseId?: string; // 🚨 Clave para mantener la integridad con la BD en el siguiente paso
     name: string;
     totalSets: number;
     seriesData: SeriesData[];
@@ -38,9 +38,14 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
   const [durationWeeks, setDurationWeeks] = useState<number>(8);
   const [daysPerWeek, setDaysPerWeek] = useState<number>(4);
   const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
-  const [customTemplates, setCustomTemplates] = useState(coachData.customTemplates);
+  
+  // 🚨 Iniciamos vacío en lugar del mockData. 
+  // Se guardarán en memoria durante la sesión del coach.
+  const [customTemplates, setCustomTemplates] = useState<any[]>([]);
+  
   const [selectedExercises, setSelectedExercises] = useState<Array<{
     id: string;
+    exerciseId?: string;
     name: string;
     totalSets: number;
     seriesData: SeriesData[];
@@ -111,7 +116,6 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
         
         {/* Formulario */}
         <div className="bg-white rounded-2xl p-4 border border-border space-y-4">
-          {/* Nombre del plan */}
           <div>
             <label className="block text-[14px] mb-2 text-gray-700 font-medium">
               Nombre del plan *
@@ -125,7 +129,6 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
             />
           </div>
 
-          {/* Descripción */}
           <div>
             <label className="block text-[14px] mb-2 text-gray-700 font-medium">
               Descripción (opcional)
@@ -139,7 +142,6 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
             />
           </div>
 
-          {/* Duración */}
           <div>
             <label className="block text-[14px] mb-2 text-gray-700 font-medium">
               Duración del plan *
@@ -195,7 +197,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
           </div>
 
           <div className="space-y-2">
-            {/* Templates personalizados */}
+            {/* Templates personalizados (creados en memoria) */}
             {customTemplates.map((template) => (
               <button
                 key={template.id}
@@ -207,7 +209,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
                   setSelectedExercises(template.exercises);
                   toast.success(`Template "${template.name}" aplicado con ${template.exercises.length} ejercicios`);
                 }}
-                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] relative"
+                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] relative shadow-sm"
               >
                 <div className="absolute top-3 right-3">
                   <span className="text-[10px] px-2 py-1 rounded-full bg-accent/10 text-accent font-semibold">
@@ -235,9 +237,10 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
                   setDescription(template.desc);
                   setDurationWeeks(template.weeks);
                   setDaysPerWeek(template.days);
+                  setSelectedExercises(null); // Limpiamos ejercicios para armarlos de cero
                   toast.success("Template aplicado");
                 }}
-                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98]"
+                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] shadow-sm"
               >
                 <h4 className="text-[15px] font-medium mb-1">{template.name}</h4>
                 <p className="text-[13px] text-gray-600">
@@ -250,7 +253,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
 
         {/* Ejercicios del template */}
         {hasExercises && (
-          <div className="bg-accent/5 border border-accent/30 rounded-2xl overflow-hidden">
+          <div className="bg-accent/5 border border-accent/30 rounded-2xl overflow-hidden shadow-sm">
             <button
               onClick={() => setShowExercises(!showExercises)}
               className="w-full p-4 flex items-center justify-between hover:bg-accent/10 transition-colors"
@@ -272,9 +275,8 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
             </button>
 
             {showExercises && (
-              <div className="px-4 pb-4 space-y-2 border-t border-accent/20">
+              <div className="px-4 pb-4 space-y-2 border-t border-accent/20 pt-3">
                 {selectedExercises.map((exercise, index) => {
-                  // Construir resumen de las series
                   const seriesSummary = exercise.seriesData
                     .map((s) => {
                       const parts = [];
@@ -323,7 +325,6 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
         )}
       </div>
 
-      {/* Botón continuar fijo */}
       <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-white border-t border-border">
         <CTAButton
           variant="primary"
@@ -335,12 +336,10 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
         </CTAButton>
       </div>
 
-      {/* Modal para crear nuevo template */}
       <CreateTemplateModal
         isOpen={isCreateTemplateModalOpen}
         onClose={() => setIsCreateTemplateModalOpen(false)}
         onSave={(template) => {
-          // Agregar el nuevo template a la lista
           const newTemplate = {
             id: `t${customTemplates.length + 1}`,
             name: template.name,
@@ -351,7 +350,6 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
           };
           setCustomTemplates([...customTemplates, newTemplate]);
           
-          // Aplicar el template al formulario
           setPlanName(template.name);
           setDescription(template.description);
           setDurationWeeks(template.weeks);
