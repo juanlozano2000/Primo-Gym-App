@@ -8,13 +8,15 @@ export interface Exercise {
 }
 
 export interface SetDetail {
-  reps: string;
-  weight: string;
+  reps?: string;
+  weight?: string;
+  time?: string;
   rir?: string;
 }
 
 export interface WorkoutItemPayload {
-  exerciseId: string;
+  exerciseId?: string; // 🚨 Ahora es opcional
+  name: string;        // 🚨 Necesitamos el nombre por si hay que crearlo
   sets: number;
   restSeconds: number;
   seriesData: SetDetail[];
@@ -36,7 +38,7 @@ export const planService = {
       const { data, error } = await supabase
         .from('exercises')
         .select('id, name, muscle_group')
-        .order('name'); // Los ordenamos alfabéticamente
+        .order('name'); 
         
       if (error) throw error;
       return data || [];
@@ -46,7 +48,7 @@ export const planService = {
     }
   },
 
-  // 2. Guardar una rutina completa (con todos sus ejercicios y series)
+  // 2. Guardar una rutina completa (con creación de ejercicios al vuelo)
   async createWorkoutPlan(coachId: string, planData: WorkoutPlanPayload) {
     try {
       console.log("Iniciando guardado de la rutina...");
@@ -66,18 +68,37 @@ export const planService = {
       if (workoutErr) throw workoutErr;
       const newWorkoutId = workoutRecord.id;
 
-      // PASO B: Recorrer los ejercicios que eligió el coach y guardarlos
+      // PASO B: Recorrer los ejercicios que eligió el coach
       for (let i = 0; i < planData.items.length; i++) {
         const item = planData.items[i];
+        let finalExerciseId = item.exerciseId;
+
+        // 🚨 LA MAGIA: Si no hay ID, es un ejercicio escrito a mano. Lo creamos.
+        if (!finalExerciseId) {
+          console.log(`Creando nuevo ejercicio personalizado: ${item.name}`);
+          const { data: newExercise, error: newExErr } = await supabase
+            .from('exercises')
+            .insert({
+              name: item.name,
+              created_by: coachId, // Queda guardado como creado por este coach
+              muscle_group: 'Personalizado' // Categoría por defecto
+            })
+            .select('id')
+            .single();
+
+          if (newExErr) throw newExErr;
+          finalExerciseId = newExercise.id; // Agarramos el ID recién horneado
+        }
         
+        // Ahora sí, insertamos en workout_items con un ID válido
         const { data: itemRecord, error: itemErr } = await supabase
           .from('workout_items')
           .insert({
             workout_id: newWorkoutId,
-            exercise_id: item.exerciseId,
+            exercise_id: finalExerciseId,
             sets: item.sets,
             rest_time_seconds: item.restSeconds,
-            order_index: i + 1 // Para mantener el orden que eligió el coach
+            order_index: i + 1 
           })
           .select('id')
           .single();
@@ -85,14 +106,15 @@ export const planService = {
         if (itemErr) throw itemErr;
         const newItemId = itemRecord.id;
 
-        // PASO C: Si el coach detalló las series (Reps, Peso, RIR), las guardamos
+        // PASO C: Guardar el detalle de las series (Reps, Peso, RIR)
         if (item.seriesData && item.seriesData.length > 0) {
           const setsToInsert = item.seriesData.map((serie, index) => ({
             workout_item_id: newItemId,
             set_number: index + 1,
-            reps_target: serie.reps,
-            weight_target: parseFloat(serie.weight) || 0,
-            rir_target: serie.rir ? parseInt(serie.rir) : null
+            reps_target: serie.reps || null,
+            weight_target: serie.weight ? parseFloat(serie.weight) : null,
+            rir_target: serie.rir ? parseInt(serie.rir) : null,
+            // Si tenías un campo de tiempo en la BD, lo podés agregar acá también
           }));
 
           const { error: setsErr } = await supabase
@@ -112,7 +134,7 @@ export const planService = {
     }
   },
 
-  // 3. Agendarle esta rutina recién creada a un cliente en el calendario
+  // 3. Agendarle esta rutina a un cliente en el calendario
   async assignPlanToClient(clientId: string, workoutId: string, scheduledDate: string) {
     try {
       const { error } = await supabase

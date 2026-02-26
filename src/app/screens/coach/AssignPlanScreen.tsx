@@ -1,29 +1,97 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Search, Check, Calendar, User } from "lucide-react";
+import { Search, Check, Calendar, User, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PlanBasicInfo } from "./CreatePlanScreen";
-import { coachData } from "../../data/mockData";
+import { WorkoutData } from "./AddWorkoutsScreen";
+import { WorkoutExercises } from "./AddExercisesScreen";
+import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
+import { planService } from "../../services/planService";
 
 interface AssignPlanScreenProps {
   onBack: () => void;
   onComplete: () => void;
   planData: PlanBasicInfo;
+  // 🚨 Recibimos los datos de los pasos anteriores
+  workouts?: WorkoutData[];
+  workoutExercises?: WorkoutExercises[];
 }
 
-export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScreenProps) {
+interface RealClient {
+  id: string;
+  name: string;
+  adherence: number;
+  hasAlert: boolean;
+  alertMessage?: string;
+}
+
+export function AssignPlanScreen({ 
+  onBack, 
+  onComplete, 
+  planData,
+  workouts = [],
+  workoutExercises = []
+}: AssignPlanScreenProps) {
+  const { user } = useAuth();
+  
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Estados para datos reales
+  const [dbClients, setDbClients] = useState<RealClient[]>([]);
+  const [isLoadingClients, setIsLoadingClients] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const clients = coachData.clients;
-  const hasExercises = planData.exercises && planData.exercises.length > 0;
+  const hasExercises = workouts.length > 0;
 
-  const filteredClients = clients.filter(client =>
+// 1. Cargar clientes reales del coach
+useEffect(() => {
+  const fetchClients = async () => {
+    if (!user?.id) return;
+    try {
+      // 🚨 ACÁ ESTÁ EL ARREGLO: Le decimos exactamente qué relación (Foreign Key) usar
+      const { data, error } = await supabase
+        .from('coach_clients')
+        .select(`
+          client_id,
+          profiles!coach_clients_client_id_fkey(full_name)
+        `)
+        .eq('coach_id', user.id)
+        .eq('status', 'active');
+
+      if (error) throw error;
+
+      const formattedClients = data?.map((c: any) => {
+        // Atajamos el perfil por si viene como Array u Objeto
+        const profileData = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+        
+        return {
+          id: c.client_id,
+          name: profileData?.full_name || "Cliente",
+          adherence: 85, 
+          hasAlert: false,
+        };
+      }) || [];
+
+      setDbClients(formattedClients);
+    } catch (error) {
+      console.error("Error al cargar clientes:", error);
+      toast.error("Error al cargar la lista de clientes");
+    } finally {
+      setIsLoadingClients(false);
+    }
+  };
+
+  fetchClients();
+}, [user?.id]);
+
+  const filteredClients = dbClients.filter(client =>
     client.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -35,34 +103,84 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
     );
   };
 
+  // 2. Función core que guarda en la base de datos
+  const savePlanToDatabase = async (assignToSelected: boolean) => {
+    if (!user?.id) return;
+    setIsSaving(true);
+    
+    try {
+      // Recorremos cada workout (Día 1, Día 2, etc.) que armó el coach
+      for (let i = 0; i < workouts.length; i++) {
+        const workout = workouts[i];
+        const exercisesForWorkout = workoutExercises.find(we => we.workoutId === workout.id)?.exercises || [];
+        
+        // Armamos el objeto que nuestro servicio entiende
+        const payload = {
+          title: `${planData.name} - ${workout.name}`, // Ej: "Plan Verano - Pecho"
+          description: workout.description || planData.description || "",
+          isTemplate: true, // Lo guardamos como template para que el coach lo pueda reusar
+          items: exercisesForWorkout.map(ex => ({
+            exerciseId: ex.exerciseId, // Si está vacío, el servicio lo crea
+            name: ex.name,
+            sets: ex.totalSets,
+            restSeconds: parseInt(ex.rest) || 60,
+            seriesData: ex.seriesData.map(s => ({
+              reps: s.reps,
+              weight: s.weight,
+              time: s.time,
+              rir: s.rir
+            }))
+          }))
+        };
+
+        // Guardamos la rutina en la BD
+        const result = await planService.createWorkoutPlan(user.id, payload);
+
+        // Si hay que asignarlo a clientes, lo agendamos
+        if (result.success && result.workoutId && assignToSelected && selectedClients.length > 0) {
+          // Asumimos que los workouts se agendan en días consecutivos para simplificar
+          const scheduleDate = new Date(startDate);
+          scheduleDate.setDate(scheduleDate.getDate() + i); 
+          const formattedDate = scheduleDate.toISOString().split('T')[0];
+
+          for (const clientId of selectedClients) {
+            await planService.assignPlanToClient(clientId, result.workoutId, formattedDate);
+          }
+        }
+      }
+
+      // Finalizamos el proceso visualmente
+      if (assignToSelected) {
+        const clientNames = dbClients
+          .filter(c => selectedClients.includes(c.id))
+          .map(c => c.name.split(' ')[0])
+          .join(", ");
+        
+        toast.success(`Plan asignado a ${selectedClients.length} cliente(s)`, { description: clientNames });
+      } else {
+        toast.success(`Plan "${planData.name}" creado correctamente`, { description: "Guardado en tus templates." });
+      }
+
+      onComplete();
+
+    } catch (error) {
+      console.error("Error al guardar:", error);
+      toast.error("Ocurrió un error al guardar el plan.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleAssign = () => {
     if (selectedClients.length === 0) {
       toast.error("Seleccioná al menos un cliente");
       return;
     }
-
-    const clientNames = clients
-      .filter(c => selectedClients.includes(c.id))
-      .map(c => c.name.split(' ')[0])
-      .join(", ");
-
-    toast.success(
-      `Plan "${planData.name}" asignado a ${selectedClients.length} cliente${selectedClients.length > 1 ? 's' : ''}`,
-      {
-        description: clientNames,
-        duration: 4000,
-      }
-    );
-
-    onComplete();
+    savePlanToDatabase(true);
   };
 
   const handleSkip = () => {
-    toast.success(`Plan "${planData.name}" creado correctamente`, {
-      description: "Podés asignarlo a tus clientes cuando quieras",
-      duration: 4000,
-    });
-    onComplete();
+    savePlanToDatabase(false);
   };
 
   return (
@@ -70,7 +188,6 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
       <AppBar title="Asignar Plan" onBack={onBack} />
 
       <div className="px-4 py-6 space-y-6">
-        {/* Paso actual */}
         {hasExercises ? (
           <>
             <div className="flex items-center gap-2">
@@ -96,7 +213,6 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
           </>
         )}
 
-        {/* Resumen del plan */}
         <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-4 text-white">
           <div className="flex items-start gap-3 mb-4">
             <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
@@ -110,25 +226,16 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
               <div className="flex items-center gap-3 text-[13px] text-white/80">
                 <span>{planData.durationWeeks} semanas</span>
                 <span>·</span>
-                <span>{planData.daysPerWeek} días/semana</span>
+                <span>{planData.daysPerWeek} días/sem</span>
                 {hasExercises && (
                   <>
                     <span>·</span>
-                    <span>{planData.exercises!.length} ejercicios del template</span>
+                    <span>{workouts.length} rutinas</span>
                   </>
                 )}
               </div>
             </div>
           </div>
-
-          {hasExercises && (
-            <div className="bg-white/10 rounded-xl p-3 mb-3">
-              <p className="text-[12px] text-white/80 font-medium mb-1">
-                ✓ Template con {planData.exercises!.length} ejercicios precargados
-              </p>
-              <p className="text-[11px] text-white/70">No necesitás editar workouts: el plan está listo para asignar.</p>
-            </div>
-          )}
 
           <div className="bg-white/10 rounded-xl p-3">
             <div className="flex items-center gap-2 mb-2">
@@ -145,7 +252,6 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
           </div>
         </div>
 
-        {/* Buscador */}
         <div>
           <h3 className="mb-3">Seleccioná los clientes</h3>
           <div className="relative">
@@ -160,7 +266,6 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
           </div>
         </div>
 
-        {/* Contador de seleccionados */}
         {selectedClients.length > 0 && (
           <div className="bg-success/10 border border-success/30 rounded-xl p-3 flex items-center gap-2">
             <Check className="w-5 h-5 text-success" />
@@ -170,9 +275,11 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
           </div>
         )}
 
-        {/* Lista de clientes */}
+        {/* Lista de clientes (Ahora desde la DB) */}
         <div className="space-y-2">
-          {filteredClients.length > 0 ? (
+          {isLoadingClients ? (
+            <div className="text-center py-8 text-gray-500 text-sm">Cargando clientes...</div>
+          ) : filteredClients.length > 0 ? (
             filteredClients.map((client) => {
               const isSelected = selectedClients.includes(client.id);
               return (
@@ -180,45 +287,23 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
                   key={client.id}
                   onClick={() => toggleClient(client.id)}
                   className={`w-full bg-white rounded-xl p-4 border-2 transition-all text-left ${
-                    isSelected
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-gray-300"
+                    isSelected ? "border-primary bg-primary/5" : "border-border hover:border-gray-300"
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary"
-                        : "border-gray-300"
+                      isSelected ? "border-primary bg-primary" : "border-gray-300"
                     }`}>
                       {isSelected && <Check className="w-4 h-4 text-white" />}
                     </div>
-
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
                       <User className="w-5 h-5 text-primary" />
                     </div>
-
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium mb-1">{client.name}</h4>
                       <div className="flex items-center gap-2 text-[13px] text-gray-600">
                         <span>Adherencia: {client.adherence}%</span>
-                        {client.hasAlert && (
-                          <>
-                            <span>·</span>
-                            <span className="text-warning">{client.alertMessage}</span>
-                          </>
-                        )}
                       </div>
-                    </div>
-
-                    <div className={`px-3 py-1 rounded-lg text-[12px] font-medium ${
-                      client.adherence >= 80
-                        ? "bg-success/10 text-success"
-                        : client.adherence >= 60
-                        ? "bg-warning/10 text-warning"
-                        : "bg-error/10 text-error"
-                    }`}>
-                      {client.adherence}%
                     </div>
                   </div>
                 </button>
@@ -233,42 +318,49 @@ export function AssignPlanScreen({ onBack, onComplete, planData }: AssignPlanScr
           )}
         </div>
 
-        {/* Acciones rápidas */}
-        <div>
-          <h4 className="text-[14px] text-gray-600 mb-2">Acciones rápidas</h4>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedClients(clients.map(c => c.id))}
-              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium hover:border-primary hover:bg-primary/5 transition-all"
-            >
-              Seleccionar todos
-            </button>
-            <button
-              onClick={() => setSelectedClients([])}
-              className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium hover:border-primary hover:bg-primary/5 transition-all"
-            >
-              Deseleccionar todos
-            </button>
+        {!isLoadingClients && dbClients.length > 0 && (
+          <div>
+            <h4 className="text-[14px] text-gray-600 mb-2">Acciones rápidas</h4>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedClients(dbClients.map(c => c.id))}
+                className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium hover:border-primary hover:bg-primary/5 transition-all"
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setSelectedClients([])}
+                className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-[13px] font-medium hover:border-primary hover:bg-primary/5 transition-all"
+              >
+                Ninguno
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Botones fijos */}
       <div className="fixed bottom-0 left-0 right-0 px-4 py-3 bg-white border-t border-border space-y-2">
         <CTAButton
           variant="primary"
           size="large"
           fullWidth
           onClick={handleAssign}
-          disabled={selectedClients.length === 0}
+          disabled={selectedClients.length === 0 || isSaving}
         >
-          Asignar plan ({selectedClients.length})
+          {isSaving ? (
+            <div className="flex items-center gap-2 justify-center">
+              <Loader2 className="w-5 h-5 animate-spin" /> Guardando...
+            </div>
+          ) : (
+            `Asignar plan (${selectedClients.length})`
+          )}
         </CTAButton>
         <button
           onClick={handleSkip}
-          className="w-full py-3 text-[14px] text-gray-600 font-medium"
+          disabled={isSaving}
+          className="w-full py-3 text-[14px] text-gray-600 font-medium disabled:opacity-50"
         >
-          Asignar después
+          Guardar sin asignar
         </button>
       </div>
     </div>
