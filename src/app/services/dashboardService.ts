@@ -139,7 +139,7 @@ export const dashboardService = {
         allClients: []
       };
     }
-  }, // <-- ACÁ ESTÁ LA COMA SEPARADORA
+  },
 
   // Función 2: Trae el perfil y currículum del entrenador
   async getCoachProfile(coachId: string) {
@@ -154,6 +154,79 @@ export const dashboardService = {
       return data;
     } catch (error) {
       console.error('Error fetching coach profile:', error);
+      return null;
+    }
+  },
+  // --- Función 3: Trae el detalle completo de un cliente específico ---
+// --- Función 3: Trae el detalle completo de un cliente específico ---
+async getClientDetail(clientId: string) {
+    // 🚨 ESCUDO ANTI-BUGS: Si el ID viene vacío o es un número de Mock, abortamos sin romper la base
+    if (!clientId || clientId === "1" || clientId.length < 10) {
+      console.warn("Se intentó buscar un cliente con un ID inválido:", clientId);
+      return null; 
+    }
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', clientId)
+        .single();
+
+      const { data: metricsData } = await supabase
+        .from('body_metrics')
+        .select('weight_kg, body_fat_pct, date')
+        .eq('client_id', clientId)
+        .order('date', { ascending: true });
+
+      // 🚨 RELACIONES EXPLÍCITAS para evitar el error PGRST201
+      const { data: assignedData } = await supabase
+        .from('assigned_plans')
+        .select('id, scheduled_date, workouts!assigned_plans_workout_id_fkey(title)')
+        .eq('client_id', clientId)
+        .order('scheduled_date', { ascending: false })
+        .limit(3);
+
+      const { data: sessionsData } = await supabase
+        .from('workout_sessions')
+        .select('id, ended_at, workouts!workout_sessions_workout_id_fkey(title)')
+        .eq('client_id', clientId)
+        .not('ended_at', 'is', null)
+        .order('ended_at', { ascending: false })
+        .limit(3);
+
+      const weights = metricsData?.map(m => m.weight_kg).filter(Boolean) || [];
+      const fats = metricsData?.map(m => m.body_fat_pct).filter(Boolean) || [];
+      
+      const latestWeight = weights.length > 0 ? weights[weights.length - 1] : 0;
+      const latestFat = fats.length > 0 ? fats[fats.length - 1] : 0;
+
+      const metrics = [];
+      if (latestWeight > 0) metrics.push({ label: "Peso", value: latestWeight, unit: "kg", history: weights });
+      if (latestFat > 0) metrics.push({ label: "% Grasa", value: latestFat, unit: "%", history: fats });
+
+      const assignedPlans = assignedData?.map((ap: any) => ({
+        id: ap.id,
+        name: Array.isArray(ap.workouts) ? ap.workouts[0]?.title : (ap.workouts?.title || "Rutina asignada"),
+        startDate: ap.scheduled_date
+      })) || [];
+
+      const recentWorkouts = sessionsData?.map((ws: any) => ({
+        name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
+        date: ws.ended_at,
+        completed: true
+      })) || [];
+
+      return {
+        id: clientId,
+        name: profile?.full_name || "Cliente",
+        adherence: 85,
+        metrics,
+        assignedPlans,
+        recentWorkouts
+      };
+    } catch (error) {
+      console.error("Error fetching client details:", error);
       return null;
     }
   }

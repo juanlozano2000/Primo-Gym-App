@@ -41,7 +41,7 @@ type CoachScreen =
   | { type: "home" }
   | { type: "clients" }
   | { type: "client-detail"; clientId: string }
-  | { type: "edit-plan" }
+  | { type: "edit-plan"; clientId: string } // 🚨 Modificado: Ahora el EditPlan recuerda de qué cliente venía
   | { type: "account" }
   | { type: "create-plan" }
   | { type: "add-workouts"; planData: PlanBasicInfo }
@@ -115,8 +115,9 @@ function AppContent() {
     setCoachScreen({ type: "client-detail", clientId });
   };
 
-  const navigateToEditPlan = () => {
-    setCoachScreen({ type: "edit-plan" });
+  // 🚨 Modificado: Recibe el clientId real para pasarlo a la pantalla de Editar
+  const navigateToEditPlan = (clientId: string) => {
+    setCoachScreen({ type: "edit-plan", clientId });
   };
 
   const navigateBackToClients = () => {
@@ -134,9 +135,7 @@ function AppContent() {
   };
 
   const navigateToAddWorkouts = (planData: PlanBasicInfo) => {
-    // Si el plan tiene ejercicios (template personalizado), saltar al assign
     if (planData.exercises && planData.exercises.length > 0) {
-      // Crear un workout único con los ejercicios del template
       const workout: WorkoutData = {
         id: "t-template-1",
         name: planData.name || "Workout 1",
@@ -162,7 +161,6 @@ function AppContent() {
     setCoachScreen({ type: "home" });
   };
 
-  // Si Supabase está buscando la sesión, mostramos una carga y frenamos el renderizado
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -171,7 +169,6 @@ function AppContent() {
     );
   }
 
-  // Login screen
   if (!isAuthenticated) {
     return (
       <>
@@ -181,11 +178,9 @@ function AppContent() {
     );
   }
 
-  // Cliente role
   if (user?.role === "client") {
     return (
       <div className="min-h-screen bg-background">
-        {/* Renderizar pantalla según estado */}
         {clientScreen.type === "home" && (
           <ClientHomeScreen
             onNavigateToWorkouts={navigateToClientWorkouts}
@@ -210,7 +205,6 @@ function AppContent() {
         
         {clientScreen.type === "account" && <ClientAccountScreen />}
 
-        {/* Tab bar solo en pantallas principales */}
         {(clientScreen.type === "home" ||
           clientScreen.type === "workouts" ||
           clientScreen.type === "account") && (
@@ -226,11 +220,9 @@ function AppContent() {
     );
   }
 
-  // Entrenador role
   if (user?.role === "coach") {
     return (
       <div className="min-h-screen bg-background">
-        {/* Renderizar pantalla según estado */}
         {coachScreen.type === "home" && (
           <CoachHomeScreen
             onNavigateToClients={navigateToCoachClients}
@@ -247,13 +239,15 @@ function AppContent() {
           <ClientDetailScreen
             clientId={coachScreen.clientId}
             onBack={navigateBackToClients}
-            onEditPlan={navigateToEditPlan}
+            // 🚨 Pasamos el clientId a la función de editar
+            onEditPlan={() => navigateToEditPlan(coachScreen.clientId)} 
           />
         )}
         
         {coachScreen.type === "edit-plan" && (
           <EditPlanScreen
-            onBack={() => navigateBackToClientDetail("c1")}
+            // 🚨 Al volver atrás, usamos el ID que guardamos, no "c1"
+            onBack={() => navigateBackToClientDetail(coachScreen.clientId)} 
           />
         )}
 
@@ -284,11 +278,9 @@ function AppContent() {
         {coachScreen.type === "assign-plan" && (
           <AssignPlanScreen
             onBack={() => {
-              // Si tiene ejercicios (template), volver a crear plan
               if (coachScreen.planData.exercises && coachScreen.planData.exercises.length > 0) {
                 navigateToCreatePlan();
               } else {
-                // Si no tiene ejercicios, volver a agregar ejercicios
                 navigateToAddExercises(coachScreen.planData, coachScreen.workouts);
               }
             }}
@@ -299,7 +291,6 @@ function AppContent() {
         
         {coachScreen.type === "account" && <CoachAccountScreen />}
 
-        {/* Tab bar solo en pantallas principales */}
         {(coachScreen.type === "home" ||
           coachScreen.type === "clients" ||
           coachScreen.type === "account") && (
