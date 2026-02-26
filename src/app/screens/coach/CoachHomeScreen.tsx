@@ -27,6 +27,7 @@ export function CoachHomeScreen({
     summary: { activeClients: 0, completedWorkouts: 0, alerts: 0 },
     clientsWithAlerts: [],
     activeToday: [],
+    allClients: []
   });
 
   useEffect(() => {

@@ -20,10 +20,11 @@ export interface DashboardData {
   };
   clientsWithAlerts: DashboardClient[];
   activeToday: DashboardClient[];
+  allClients: DashboardClient[];
 }
 
 export const dashboardService = {
-  // Función única que devuelve todo el paquete de datos listo para usar
+  // Función 1: Devuelve todo el paquete de datos del dashboard listo para usar
   async getCoachDashboardData(coachId: string): Promise<DashboardData> {
     try {
       // 1. Buscamos a los clientes activos
@@ -62,8 +63,9 @@ export const dashboardService = {
       today.setHours(0, 0, 0, 0);
 
       const processedClients: DashboardClient[] = clientsData?.map((relation: any) => {
+        // Atajamos el perfil por si viene como array u objeto
+        const profileData = Array.isArray(relation.profiles) ? relation.profiles[0] : relation.profiles;
         const clientId = relation.client_id;
-        const profile = relation.profiles;
         
         const clientSessions = sessionsData.filter(s => s.client_id === clientId);
         const lastSession = clientSessions[0]; 
@@ -98,12 +100,12 @@ export const dashboardService = {
           alertMessage = "Sin registros recientes";
         }
 
-        const rawPlan = profile.plan_type || 'basic';
+        const rawPlan = profileData?.plan_type || 'basic';
         const formattedPlan = (rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1)) as "Basic" | "Premium";
 
         return {
           id: clientId,
-          name: profile.full_name || "Cliente",
+          name: profileData?.full_name || "Cliente",
           plan: formattedPlan,
           lastActivity: lastActivityText,
           hasAlert,
@@ -124,6 +126,7 @@ export const dashboardService = {
         },
         clientsWithAlerts: processedClients.filter(c => c.hasAlert),
         activeToday: processedClients.filter(c => c.isToday),
+        allClients: processedClients,
       };
 
     } catch (error) {
@@ -132,8 +135,26 @@ export const dashboardService = {
       return {
         summary: { activeClients: 0, completedWorkouts: 0, alerts: 0 },
         clientsWithAlerts: [],
-        activeToday: []
+        activeToday: [],
+        allClients: []
       };
+    }
+  }, // <-- ACÁ ESTÁ LA COMA SEPARADORA
+
+  // Función 2: Trae el perfil y currículum del entrenador
+  async getCoachProfile(coachId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('coach_details')
+        .select('*')
+        .eq('id', coachId)
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error fetching coach profile:', error);
+      return null;
     }
   }
 };
