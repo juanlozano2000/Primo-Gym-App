@@ -227,5 +227,102 @@ export const clientService = {
       console.error('Error al finalizar workout:', error);
       return false;
     }
+  },
+  // 6. Obtener los datos completos para la pantalla "Mi Cuenta" del Cliente
+  async getClientAccountData(clientId: string) {
+    try {
+      // a. Buscar últimas métricas corporales
+      const { data: metrics } = await supabase
+        .from('body_metrics')
+        .select('weight_kg, height_cm, body_fat_pct, date')
+        .eq('client_id', clientId)
+        .order('date', { ascending: false })
+        .limit(2); // Traemos las últimas 2 para ver si subió o bajó (trend)
+
+      // Le decimos a TypeScript exactamente qué palabras están permitidas
+      type TrendType = "up" | "down" | "neutral";
+
+      let weightData = { value: 0, unit: "kg", trend: "neutral" as TrendType, trendValue: "0" };
+      let heightData = { value: 0, unit: "cm", trend: "neutral" as TrendType };
+      let bodyFatData = { value: 0, unit: "%", trend: "neutral" as TrendType, trendValue: "0" };
+      let bmiData = { value: 0, unit: "", trend: "neutral" as TrendType, trendValue: "0" };
+
+      if (metrics && metrics.length > 0) {
+        const latest = metrics[0];
+        const previous = metrics.length > 1 ? metrics[1] : null;
+
+        if (latest.weight_kg) {
+          weightData.value = latest.weight_kg;
+          if (previous && previous.weight_kg) {
+            const diff = latest.weight_kg - previous.weight_kg;
+            weightData.trend = diff > 0 ? "up" : diff < 0 ? "down" : "neutral";
+            weightData.trendValue = `${Math.abs(diff).toFixed(1)} kg`;
+          }
+        }
+
+        if (latest.height_cm) heightData.value = latest.height_cm;
+
+        if (latest.body_fat_pct) {
+          bodyFatData.value = latest.body_fat_pct;
+          if (previous && previous.body_fat_pct) {
+            const diff = latest.body_fat_pct - previous.body_fat_pct;
+            bodyFatData.trend = diff > 0 ? "up" : diff < 0 ? "down" : "neutral";
+            bodyFatData.trendValue = `${Math.abs(diff).toFixed(1)}%`;
+          }
+        }
+
+        // Calcular BMI si tenemos peso y altura
+        if (latest.weight_kg && latest.height_cm) {
+          const heightM = latest.height_cm / 100;
+          const bmi = latest.weight_kg / (heightM * heightM);
+          bmiData.value = parseFloat(bmi.toFixed(1));
+        }
+      }
+
+      // b. Buscar datos del Entrenador asignado
+      const { data: coachRelation } = await supabase
+        .from("coach_clients")
+        .select(`
+          coach_id,
+          profiles!coach_id (full_name)
+        `)
+        .eq("client_id", clientId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      let coachDetails = {
+        name: "Sin entrenador",
+        rating: 5.0,
+        specialty: "General",
+        certifications: ["Spoter Coach"]
+      };
+
+      if (coachRelation && coachRelation.profiles) {
+        // @ts-ignore
+        coachDetails.name = coachRelation.profiles.full_name || "Tu Entrenador";
+        
+        // Buscar detalles del coach
+        const { data: coachInfo } = await supabase
+          .from("coach_details")
+          .select("specialties, certifications, rating")
+          .eq("id", coachRelation.coach_id)
+          .maybeSingle();
+
+        if (coachInfo) {
+          coachDetails.specialty = coachInfo.specialties?.[0] || "Entrenador Personal";
+          coachDetails.certifications = coachInfo.certifications || [];
+          coachDetails.rating = coachInfo.rating || 5.0;
+        }
+      }
+
+      return {
+        insights: { weight: weightData, height: heightData, bodyFat: bodyFatData, bmi: bmiData },
+        coach: coachDetails
+      };
+
+    } catch (error) {
+      console.error('Error fetching client account data:', error);
+      return null;
+    }
   }
 };
