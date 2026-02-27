@@ -105,5 +105,127 @@ export const clientService = {
         totalTime: "0 min"
       };
     }
+  },
+  // --- AGREGAR ESTO EN clientService.ts ---
+
+  // 3. Obtener TODOS los entrenamientos (pendientes y completados)
+  async getAllWorkouts(clientId: string): Promise<WorkoutSummary[]> {
+    try {
+      const { data, error } = await supabase
+        .from('assigned_plans')
+        .select(`
+          id, workout_id, scheduled_date, is_completed,
+          workouts (title, workout_items(id))
+        `)
+        .eq('client_id', clientId)
+        .order('scheduled_date', { ascending: false });
+
+      if (error) throw error;
+
+      return data?.map((assignment: any) => {
+        const workoutData = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
+        const exerciseCount = workoutData?.workout_items?.length || 0;
+        return {
+          id: assignment.workout_id,
+          title: workoutData?.title || 'Rutina',
+          exercises: exerciseCount,
+          duration: `${exerciseCount * 10} min`,
+          status: assignment.is_completed ? 'completed' : 'pending',
+          scheduledDate: assignment.scheduled_date
+        };
+      }) || [];
+    } catch (error) {
+      console.error('Error fetching all workouts:', error);
+      return [];
+    }
+  },
+
+  // 4. Obtener el detalle de un workout para la pantalla de entrenamiento
+  async getWorkoutDetail(workoutId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('workouts')
+        .select(`
+          id, title, description,
+          workout_items (
+            id, sets, rest_time_seconds, order_index,
+            exercises (id, name, muscle_group),
+            workout_item_sets (set_number, reps_target, weight_target, rir_target)
+          )
+        `)
+        .eq('id', workoutId)
+        .single();
+
+      if (error) throw error;
+
+      // Ordenar los ejercicios por su índice
+      const items = (data.workout_items || []).sort((a: any, b: any) => a.order_index - b.order_index);
+
+      // Mapear al formato que espera la UI
+      const exerciseList = items.map((item: any) => {
+        const exerciseData = Array.isArray(item.exercises) ? item.exercises[0] : item.exercises;
+        
+        // Ordenar las series
+        const sets = (item.workout_item_sets || []).sort((a: any, b: any) => a.set_number - b.set_number);
+        
+        const seriesData = sets.map((s: any) => ({
+          reps: s.reps_target ? s.reps_target.toString() : undefined,
+          weight: s.weight_target ? s.weight_target.toString() : undefined,
+          rir: s.rir_target ? s.rir_target.toString() : undefined,
+        }));
+
+        return {
+          id: item.id,
+          name: exerciseData?.name || 'Ejercicio',
+          sets: item.sets,
+          rest: `${item.rest_time_seconds}s`,
+          seriesData: seriesData.length > 0 ? seriesData : Array(item.sets).fill({})
+        };
+      });
+
+      return {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        exerciseList
+      };
+    } catch (error) {
+      console.error('Error fetching workout detail:', error);
+      return null;
+    }
+  },
+
+  // 5. Registrar que el cliente terminó su entrenamiento
+  async finishWorkout(clientId: string, workoutId: string, durationMinutes: number = 45) {
+    try {
+      // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
+      const { data: assignment } = await supabase
+        .from('assigned_plans')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .eq('is_completed', false)
+        .order('scheduled_date', { ascending: true })
+        .limit(1)
+        .single();
+
+      if (assignment) {
+        await supabase.from('assigned_plans').update({ is_completed: true }).eq('id', assignment.id);
+      }
+
+      // b. Guardamos la sesión en el historial
+      await supabase.from('workout_sessions').insert({
+        client_id: clientId,
+        workout_id: workoutId,
+        started_at: new Date(Date.now() - durationMinutes * 60000).toISOString(),
+        ended_at: new Date().toISOString(),
+        duration_minutes: durationMinutes
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error al finalizar workout:', error);
+      return false;
+    }
   }
 };
