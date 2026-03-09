@@ -23,6 +23,7 @@ export function ClientDetailScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
+  const [planUpdatedAt, setPlanUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchClientDetail = async () => {
@@ -30,6 +31,7 @@ export function ClientDetailScreen({
       const data = await dashboardService.getClientDetail(clientId);
       setClient(data);
       setIsPremium(data?.planType === "premium");
+      setPlanUpdatedAt(data?.planUpdatedAt ?? null);
       setIsLoading(false);
     };
 
@@ -43,15 +45,17 @@ export function ClientDetailScreen({
   const handleTogglePremium = async () => {
     const newPlan = isPremium ? "basic" : "premium";
     setIsUpdatingPlan(true);
+    const now = new Date().toISOString();
     const { error } = await supabase
       .from("profiles")
-      .update({ plan_type: newPlan })
+      .update({ plan_type: newPlan, plan_updated_at: now })
       .eq("id", clientId);
 
     if (error) {
       toast.error("Error al actualizar el plan");
     } else {
       setIsPremium(!isPremium);
+      setPlanUpdatedAt(now);
       toast.success(`Plan actualizado a ${newPlan === "premium" ? "Premium" : "Basic"}`);
     }
     setIsUpdatingPlan(false);
@@ -130,6 +134,11 @@ export function ClientDetailScreen({
               <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isPremium ? "translate-x-5" : "translate-x-0.5"}`} />
             </div>
           </button>
+          {planUpdatedAt && (
+            <p className="text-[11px] text-gray-400 text-right -mt-1 mb-2 pr-1">
+              Último cambio: {new Date(planUpdatedAt).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })} {new Date(planUpdatedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          )}
 
           <div className="grid grid-cols-1 gap-2">
             <CTAButton
