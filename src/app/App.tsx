@@ -10,6 +10,7 @@ import { TabBar, TabItem } from "./components/TabBar";
 
 // Screens - Auth
 import { LoginScreen } from "./screens/LoginScreen";
+import { RegisterScreen } from "./screens/RegisterScreen";
 
 // Screens - Client
 import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
@@ -170,9 +171,10 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
+    const isRegisterRoute = new URLSearchParams(window.location.search).get("register") === "true";
     return (
       <>
-        <LoginScreen />
+        {isRegisterRoute ? <RegisterScreen /> : <LoginScreen />}
         <Toaster position="top-center" richColors />
       </>
     );
