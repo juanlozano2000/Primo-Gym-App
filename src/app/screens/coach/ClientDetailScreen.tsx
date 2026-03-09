@@ -204,11 +204,10 @@ export function ClientDetailScreen({
                   <div className="flex-1">
                     <h4 className="mb-1 font-semibold text-gray-900">{plan.name}</h4>
                     <p className="text-[13px] text-gray-600">
-                      Desde {new Date(plan.startDate).toLocaleDateString("es-AR", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric"
-                      })}
+                      Inicio: {new Date(plan.startDate).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" })}
+                    </p>
+                    <p className="text-[13px] text-gray-600">
+                      Fin: {new Date(plan.endDate).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" })}
                     </p>
                     <div className="inline-flex items-center gap-1 mt-2 px-2 py-1 bg-success/10 text-success rounded-md">
                       <CheckCircle className="w-3.5 h-3.5" />

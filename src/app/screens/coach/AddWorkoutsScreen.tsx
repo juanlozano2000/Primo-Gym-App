@@ -154,7 +154,7 @@ export function AddWorkoutsScreen({ onBack, onContinue, planData }: AddWorkoutsS
                   type="text"
                   value={workoutName}
                   onChange={(e) => setWorkoutName(e.target.value)}
-                  placeholder="Ej: Pecho y Tríceps"
+                  placeholder="Ej: Bloque 1 - Brazos"
                   className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </div>

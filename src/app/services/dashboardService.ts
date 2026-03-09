@@ -182,7 +182,7 @@ async getClientDetail(clientId: string) {
       // 🚨 RELACIONES EXPLÍCITAS para evitar el error PGRST201
       const { data: assignedData } = await supabase
         .from('assigned_plans')
-        .select('id, scheduled_date, workouts!assigned_plans_workout_id_fkey(title)')
+        .select('id, scheduled_date, is_completed, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
         .eq('client_id', clientId)
         .order('scheduled_date', { ascending: false })
         .limit(3);
@@ -205,11 +205,22 @@ async getClientDetail(clientId: string) {
       if (latestWeight > 0) metrics.push({ label: "Peso", value: latestWeight, unit: "kg", history: weights });
       if (latestFat > 0) metrics.push({ label: "% Grasa", value: latestFat, unit: "%", history: fats });
 
-      const assignedPlans = assignedData?.map((ap: any) => ({
-        id: ap.id,
-        name: Array.isArray(ap.workouts) ? ap.workouts[0]?.title : (ap.workouts?.title || "Rutina asignada"),
-        startDate: ap.scheduled_date
-      })) || [];
+      const assignedPlans = assignedData?.map((ap: any) => {
+        const workoutData = Array.isArray(ap.workouts) ? ap.workouts[0] : ap.workouts;
+        const exerciseCount = workoutData?.workout_items?.length || 0;
+        const estimatedMinutes = exerciseCount > 0 ? exerciseCount * 10 : 45;
+        const durationWeeks = workoutData?.duration_weeks ?? 1;
+        const endDate = new Date(ap.scheduled_date);
+        endDate.setDate(endDate.getDate() + durationWeeks * 7);
+        return {
+          id: ap.id,
+          name: workoutData?.title || "Rutina asignada",
+          startDate: ap.scheduled_date,
+          endDate: endDate.toISOString().split('T')[0],
+          isCompleted: ap.is_completed,
+          duration: `${estimatedMinutes} min`,
+        };
+      }) || [];
 
       const recentWorkouts = sessionsData?.map((ws: any) => ({
         name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),

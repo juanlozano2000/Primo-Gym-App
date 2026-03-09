@@ -47,7 +47,7 @@ type CoachScreen =
   | { type: "create-plan" }
   | { type: "add-workouts"; planData: PlanBasicInfo }
   | { type: "add-exercises"; planData: PlanBasicInfo; workouts: WorkoutData[] }
-  | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[] };
+  | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[]; workoutExercises: WorkoutExercises[] };
 
 function AppContent() {
   const { user, isAuthenticated, loading } = useAuth();
@@ -153,8 +153,8 @@ function AppContent() {
     setCoachScreen({ type: "add-exercises", planData, workouts });
   };
 
-  const navigateToAssignPlan = (planData: PlanBasicInfo, workouts: WorkoutData[]) => {
-    setCoachScreen({ type: "assign-plan", planData, workouts });
+  const navigateToAssignPlan = (planData: PlanBasicInfo, workouts: WorkoutData[], workoutExercises: WorkoutExercises[] = []) => {
+    setCoachScreen({ type: "assign-plan", planData, workouts, workoutExercises });
   };
 
   const navigateBackToCoachHome = () => {
@@ -282,7 +282,7 @@ function AppContent() {
         {coachScreen.type === "add-exercises" && (
           <AddExercisesScreen
             onBack={() => navigateToAddWorkouts(coachScreen.planData)}
-            onFinish={() => navigateToAssignPlan(coachScreen.planData, coachScreen.workouts)}
+            onFinish={(exercises) => navigateToAssignPlan(coachScreen.planData, coachScreen.workouts, exercises)}
             planData={coachScreen.planData}
             workouts={coachScreen.workouts}
           />
@@ -299,9 +299,11 @@ function AppContent() {
             }}
             onComplete={navigateBackToCoachHome}
             planData={coachScreen.planData}
+            workouts={coachScreen.workouts}
+            workoutExercises={coachScreen.workoutExercises}
           />
         )}
-        
+
         {coachScreen.type === "account" && <CoachAccountScreen />}
 
         {(coachScreen.type === "home" ||

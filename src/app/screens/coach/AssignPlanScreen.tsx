@@ -118,7 +118,8 @@ useEffect(() => {
         const payload = {
           title: `${planData.name} - ${workout.name}`, // Ej: "Plan Verano - Pecho"
           description: workout.description || planData.description || "",
-          isTemplate: true, // Lo guardamos como template para que el coach lo pueda reusar
+          isTemplate: true,
+          durationWeeks: planData.durationWeeks,
           items: exercisesForWorkout.map(ex => ({
             exerciseId: ex.exerciseId, // Si está vacío, el servicio lo crea
             name: ex.name,

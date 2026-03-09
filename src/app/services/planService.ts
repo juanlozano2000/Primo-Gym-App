@@ -26,6 +26,7 @@ export interface WorkoutPlanPayload {
   title: string;
   description: string;
   isTemplate: boolean;
+  durationWeeks?: number;
   items: WorkoutItemPayload[];
 }
 
@@ -60,7 +61,8 @@ export const planService = {
           title: planData.title,
           description: planData.description,
           coach_id: coachId,
-          is_template: planData.isTemplate
+          is_template: planData.isTemplate,
+          duration_weeks: planData.durationWeeks ?? 1,
         })
         .select('id')
         .single();
