@@ -1,6 +1,6 @@
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown } from "lucide-react";
+import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { dashboardService } from "../../services/dashboardService";
@@ -40,6 +40,38 @@ export function ClientDetailScreen({
 
   const handleSendMessage = () => {
     toast.info("Función de mensajería próximamente");
+  };
+
+  const handleDeletePlan = async (assignmentId: string, workoutId: string) => {
+    if (!confirm("¿Estás seguro? Se eliminarán la asignación y las sesiones asociadas.")) return;
+
+    try {
+      // 1. Eliminar sesiones de workout_sessions para este cliente y workout
+      await supabase
+        .from('workout_sessions')
+        .delete()
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId);
+
+      // 2. Eliminar la asignación de assigned_plans
+      const { error } = await supabase
+        .from('assigned_plans')
+        .delete()
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+
+      // Actualizar el estado local
+      setClient((prev: any) => ({
+        ...prev,
+        assignedPlans: prev.assignedPlans.filter((p: any) => p.id !== assignmentId),
+        recentWorkouts: prev.recentWorkouts.filter((w: any) => w.workoutId !== workoutId),
+      }));
+      toast.success("Plan eliminado correctamente");
+    } catch (err) {
+      console.error("Error al eliminar plan:", err);
+      toast.error("Error al eliminar el plan");
+    }
   };
 
   const handleTogglePremium = async () => {
@@ -209,9 +241,22 @@ export function ClientDetailScreen({
                     <p className="text-[13px] text-gray-600">
                       Fin: {new Date(plan.endDate).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" })}
                     </p>
-                    <div className="inline-flex items-center gap-1 mt-2 px-2 py-1 bg-success/10 text-success rounded-md">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span className="text-[12px] font-medium">Activo</span>
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
+                        plan.isCompleted
+                          ? "bg-gray-100 text-gray-500"
+                          : "bg-success/10 text-success"
+                      }`}>
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span className="text-[12px] font-medium">{plan.isCompleted ? "Completado" : "Activo"}</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePlan(plan.id, plan.workoutId)}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="text-[12px] font-medium">Eliminar</span>
+                      </button>
                     </div>
                   </div>
                 </div>

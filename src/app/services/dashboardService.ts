@@ -87,10 +87,13 @@ export const dashboardService = {
 
         if (lastSession) {
           const sessionDate = new Date(lastSession.ended_at);
-          const diffTime = new Date().getTime() - sessionDate.getTime();
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          
+          // Comparar por día calendario (midnights), no por diferencia bruta de ms
+          const sessionDay = new Date(sessionDate);
+          sessionDay.setHours(0, 0, 0, 0);
+          const diffDays = Math.round((today.getTime() - sessionDay.getTime()) / (1000 * 60 * 60 * 24));
 
-          if (sessionDate >= today) {
+          if (diffDays === 0) {
             const hours = sessionDate.getHours();
             const mins = sessionDate.getMinutes().toString().padStart(2, '0');
             lastActivityText = `Hoy, ${hours}:${mins}`;
@@ -198,10 +201,9 @@ async getClientDetail(clientId: string) {
       // 🚨 RELACIONES EXPLÍCITAS para evitar el error PGRST201
       const { data: assignedData } = await supabase
         .from('assigned_plans')
-        .select('id, scheduled_date, is_completed, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
+        .select('id, workout_id, scheduled_date, is_completed, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
         .eq('client_id', clientId)
-        .order('scheduled_date', { ascending: false })
-        .limit(3);
+        .order('scheduled_date', { ascending: false });
 
       const { data: sessionsData } = await supabase
         .from('workout_sessions')
@@ -230,6 +232,7 @@ async getClientDetail(clientId: string) {
         endDate.setDate(endDate.getDate() + durationWeeks * 7);
         return {
           id: ap.id,
+          workoutId: ap.workout_id,
           name: workoutData?.title || "Rutina asignada",
           startDate: ap.scheduled_date,
           endDate: endDate.toISOString().split('T')[0],

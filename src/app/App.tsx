@@ -259,6 +259,7 @@ function AppContent() {
         
         {coachScreen.type === "edit-plan" && (
           <EditPlanScreen
+            clientId={coachScreen.clientId}
             // 🚨 Al volver atrás, usamos el ID que guardamos, no "c1"
             onBack={() => navigateBackToClientDetail(coachScreen.clientId)} 
           />

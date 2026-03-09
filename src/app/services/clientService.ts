@@ -227,18 +227,17 @@ export const clientService = {
   async finishWorkout(clientId: string, workoutId: string, durationMinutes: number = 45) {
     try {
       // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
-      const { data: assignment } = await supabase
+      const { data: assignments } = await supabase
         .from('assigned_plans')
         .select('id')
         .eq('client_id', clientId)
         .eq('workout_id', workoutId)
         .eq('is_completed', false)
         .order('scheduled_date', { ascending: true })
-        .limit(1)
-        .single();
+        .limit(1);
 
-      if (assignment) {
-        await supabase.from('assigned_plans').update({ is_completed: true }).eq('id', assignment.id);
+      if (assignments && assignments.length > 0) {
+        await supabase.from('assigned_plans').update({ is_completed: true }).eq('id', assignments[0].id);
       }
 
       // b. Guardamos la sesión en el historial
