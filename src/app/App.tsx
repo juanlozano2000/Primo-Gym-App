@@ -143,7 +143,7 @@ function AppContent() {
         description: planData.description || "Workout generado desde template",
         dayNumber: 1,
       };
-      setCoachScreen({ type: "assign-plan", planData, workouts: [workout] });
+      setCoachScreen({ type: "assign-plan", planData, workouts: [workout], workoutExercises: [] });
     } else {
       setCoachScreen({ type: "add-workouts", planData });
     }
