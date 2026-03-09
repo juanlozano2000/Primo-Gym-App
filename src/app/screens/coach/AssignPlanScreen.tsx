@@ -67,14 +67,34 @@ useEffect(() => {
 
       if (error) throw error;
 
+      const clientIds = data?.map((c: any) => c.client_id) || [];
+
+      // Traemos assigned_plans para calcular adherencia real
+      let assignedPlansData: any[] = [];
+      if (clientIds.length > 0) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data: apData } = await supabase
+          .from('assigned_plans')
+          .select('client_id, is_completed')
+          .in('client_id', clientIds)
+          .lte('scheduled_date', todayStr);
+        assignedPlansData = apData || [];
+      }
+
       const formattedClients = data?.map((c: any) => {
         // Atajamos el perfil por si viene como Array u Objeto
         const profileData = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
         
+        // Adherencia = completadas / total programadas que ya pasaron
+        const clientPlans = assignedPlansData.filter(p => p.client_id === c.client_id);
+        const totalPlans = clientPlans.length;
+        const completedPlans = clientPlans.filter(p => p.is_completed).length;
+        const adherence = totalPlans > 0 ? Math.round((completedPlans / totalPlans) * 100) : 0;
+
         return {
           id: c.client_id,
           name: profileData?.full_name || "Cliente",
-          adherence: 85, 
+          adherence,
           hasAlert: false,
         };
       }) || [];

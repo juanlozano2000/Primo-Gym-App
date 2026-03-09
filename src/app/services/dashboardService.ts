@@ -59,11 +59,13 @@ export const dashboardService = {
 
       // 2b. Buscamos assigned_plans para calcular adherencia real por cliente
       let assignedPlansData: any[] = [];
+      const todayStr = new Date().toISOString().split('T')[0];
       if (clientIds.length > 0) {
         const { data: apData } = await supabase
           .from('assigned_plans')
           .select('client_id, is_completed')
-          .in('client_id', clientIds);
+          .in('client_id', clientIds)
+          .lte('scheduled_date', todayStr);
         assignedPlansData = apData || [];
       }
 
@@ -116,7 +118,7 @@ export const dashboardService = {
         const rawPlan = profileData?.plan_type || 'basic';
         const formattedPlan = (rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1)) as "Basic" | "Premium";
 
-        // Cálculo real de adherencia basado en planes asignados
+        // Adherencia = asistencia: de las rutinas programadas que ya pasaron, ¿a cuántas fue?
         const clientPlans = assignedPlansData.filter(p => p.client_id === clientId);
         const totalPlans = clientPlans.length;
         const completedPlans = clientPlans.filter(p => p.is_completed).length;
@@ -247,10 +249,12 @@ async getClientDetail(clientId: string) {
         completed: true
       })) || [];
 
-      // Cálculo real de adherencia
-      const totalAssigned = assignedData?.length || 0;
-      const completedAssigned = assignedData?.filter((ap: any) => ap.is_completed).length || 0;
-      const adherence = totalAssigned > 0 ? Math.round((completedAssigned / totalAssigned) * 100) : 0;
+      // Adherencia = asistencia: solo contamos las rutinas cuya fecha ya pasó
+      const todayForAdherence = new Date().toISOString().split('T')[0];
+      const pastAssigned = assignedData?.filter((ap: any) => ap.scheduled_date <= todayForAdherence) || [];
+      const totalPast = pastAssigned.length;
+      const completedPast = pastAssigned.filter((ap: any) => ap.is_completed).length;
+      const adherence = totalPast > 0 ? Math.round((completedPast / totalPast) * 100) : 0;
 
       return {
         id: clientId,
