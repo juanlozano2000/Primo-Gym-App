@@ -162,6 +162,18 @@ function AppContent() {
     setCoachScreen({ type: "home" });
   };
 
+  const isRegisterRoute = new URLSearchParams(window.location.search).get("register") === "true";
+
+  // Si la URL tiene ?register=true, siempre mostramos el registro (sin importar sesión)
+  if (isRegisterRoute) {
+    return (
+      <>
+        <RegisterScreen />
+        <Toaster position="top-center" richColors />
+      </>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -171,10 +183,9 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    const isRegisterRoute = new URLSearchParams(window.location.search).get("register") === "true";
     return (
       <>
-        {isRegisterRoute ? <RegisterScreen /> : <LoginScreen />}
+        <LoginScreen />
         <Toaster position="top-center" richColors />
       </>
     );

@@ -57,7 +57,7 @@ export function LoginScreen() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              placeholder="tu@email.com o DNI"
+              placeholder="tu@email.com"
               required
               autoComplete="email"
             />
