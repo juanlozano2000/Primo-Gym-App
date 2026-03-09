@@ -71,7 +71,37 @@ export const clientService = {
       const startOfWeek = new Date(now.setDate(diff));
       startOfWeek.setHours(0, 0, 0, 0);
 
-      // Buscamos sesiones de esta semana
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+      // 1. Planes asignados esta semana (total de workouts programados)
+      const { data: weekAssignments } = await supabase
+        .from('assigned_plans')
+        .select(`
+          id, workout_id, is_completed,
+          workouts ( workout_items (sets) )
+        `)
+        .eq('client_id', clientId)
+        .gte('scheduled_date', startOfWeek.toISOString())
+        .lt('scheduled_date', endOfWeek.toISOString());
+
+      const assignments = weekAssignments || [];
+      const totalWorkouts = assignments.length;
+
+      // Calcular series totales sumando los sets de cada workout_item de cada assignment
+      let totalSets = 0;
+      let completedSets = 0;
+      for (const assignment of assignments) {
+        const workoutData: any = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
+        const items = workoutData?.workout_items || [];
+        const assignmentSets = items.reduce((acc: number, item: any) => acc + (item.sets || 0), 0);
+        totalSets += assignmentSets;
+        if (assignment.is_completed) {
+          completedSets += assignmentSets;
+        }
+      }
+
+      // 2. Sesiones completadas esta semana
       const { data: sessions } = await supabase
         .from('workout_sessions')
         .select('id, duration_minutes')
@@ -85,13 +115,11 @@ export const clientService = {
       const minutes = totalTimeMinutes % 60;
       const totalTimeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
 
-      // TODO: Las series requerirían consultar 'exercise_logs', 
-      // por ahora mockeamos una meta semanal estándar.
       return {
-        completedSets: completedWorkouts * 15, // Estimado temporal
-        totalSets: 60,
-        completedWorkouts: completedWorkouts,
-        totalWorkouts: 4,
+        completedSets,
+        totalSets,
+        completedWorkouts,
+        totalWorkouts,
         totalTime: totalTimeStr || "0 min"
       };
 
