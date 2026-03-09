@@ -4,15 +4,11 @@ import { supabase } from "../lib/supabase";
 import { CTAButton } from "../components/CTAButton";
 import { toast } from "sonner";
 
-interface Gym {
-  id: string;
-  name: string;
-}
-
 interface Coach {
   id: string;
   full_name: string;
   specialty: string | null;
+  email: string;
 }
 
 type Step = "form" | "coach";
@@ -26,8 +22,6 @@ export function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [gymId, setGymId] = useState("");
-  const [gyms, setGyms] = useState<Gym[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,16 +36,7 @@ export function RegisterScreen() {
   const [selectedCoachId, setSelectedCoachId] = useState<string | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
 
-  useEffect(() => {
-    async function fetchGyms() {
-      const { data, error } = await supabase
-        .from("gyms")
-        .select("id, name")
-        .order("name", { ascending: true });
-      if (!error && data) setGyms(data);
-    }
-    fetchGyms();
-  }, []);
+
 
   useEffect(() => {
     if (step !== "coach") return;
@@ -61,9 +46,11 @@ export function RegisterScreen() {
         .select(`
           id,
           full_name,
+          email,
           coach_details (specialties)
         `)
         .eq("role", "coach")
+        .neq("email", "entrenador@primogym.com")
         .order("full_name", { ascending: true });
 
       if (!error && data) {
@@ -75,6 +62,7 @@ export function RegisterScreen() {
             id: c.id,
             full_name: c.full_name || "Sin nombre",
             specialty: details?.specialties?.[0] ?? null,
+            email: c.email || "",
           };
         });
         setCoaches(mapped);
@@ -94,11 +82,6 @@ export function RegisterScreen() {
       toast.error("La contraseña debe tener al menos 6 caracteres");
       return;
     }
-    if (!gymId) {
-      toast.error("Seleccioná un gimnasio");
-      return;
-    }
-
     setIsLoading(true);
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
@@ -127,7 +110,6 @@ export function RegisterScreen() {
           role: "client",
           birth_date: birthDate,
           phone: phone,
-          gym_id: gymId,
         },
         { onConflict: "id" }
       );
@@ -424,28 +406,6 @@ export function RegisterScreen() {
                 {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-          </div>
-
-          {/* Gimnasio */}
-          <div>
-            <label className="block text-[14px] mb-1.5 text-gray-700">
-              Gimnasio
-            </label>
-            <select
-              value={gymId}
-              onChange={(e) => setGymId(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-gray-700 appearance-none"
-              required
-            >
-              <option value="" disabled>
-                {gyms.length === 0 ? "Cargando..." : "Seleccioná tu gimnasio"}
-              </option>
-              {gyms.map((gym) => (
-                <option key={gym.id} value={gym.id}>
-                  {gym.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div className="mt-2">
