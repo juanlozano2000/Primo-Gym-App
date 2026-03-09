@@ -21,6 +21,7 @@ export function ClientAccountScreen() {
 
   // 🚨 Estados reales para datos
   const [fullName, setFullName] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [accountData, setAccountData] = useState<any>(null);
 
@@ -42,11 +43,14 @@ export function ClientAccountScreen() {
         // Nombre del perfil
         const { data: profile } = await supabase
           .from("profiles")
-          .select("full_name")
+          .select("full_name, plan_type")
           .eq("id", session.user.id)
           .single();
 
-        if (profile) setFullName(profile.full_name);
+        if (profile) {
+          setFullName(profile.full_name);
+          setIsPremium(profile.plan_type === "premium");
+        }
 
         // Métricas y Coach
         const data = await clientService.getClientAccountData(session.user.id);
@@ -194,7 +198,7 @@ export function ClientAccountScreen() {
           </div>
         </div>
 
-        <PremiumBanner onUpgrade={handleUpgradeClick} />
+        {!isPremium && <PremiumBanner onUpgrade={handleUpgradeClick} />}
 
         {/* Mi Profesor */}
         <div>

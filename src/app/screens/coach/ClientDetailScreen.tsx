@@ -1,10 +1,10 @@
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Edit, TrendingUp, CheckCircle, Calendar, Loader2 } from "lucide-react";
+import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
-// 🚨 Importamos el servicio
 import { dashboardService } from "../../services/dashboardService";
+import { supabase } from "../../lib/supabase";
 
 interface ClientDetailScreenProps {
   clientId: string;
@@ -21,12 +21,15 @@ export function ClientDetailScreen({
   // 🚨 Estado para guardar la data real
   const [client, setClient] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
+  const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
 
   useEffect(() => {
     const fetchClientDetail = async () => {
       setIsLoading(true);
       const data = await dashboardService.getClientDetail(clientId);
       setClient(data);
+      setIsPremium(data?.planType === "premium");
       setIsLoading(false);
     };
 
@@ -35,6 +38,23 @@ export function ClientDetailScreen({
 
   const handleSendMessage = () => {
     toast.info("Función de mensajería próximamente");
+  };
+
+  const handleTogglePremium = async () => {
+    const newPlan = isPremium ? "basic" : "premium";
+    setIsUpdatingPlan(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ plan_type: newPlan })
+      .eq("id", clientId);
+
+    if (error) {
+      toast.error("Error al actualizar el plan");
+    } else {
+      setIsPremium(!isPremium);
+      toast.success(`Plan actualizado a ${newPlan === "premium" ? "Premium" : "Basic"}`);
+    }
+    setIsUpdatingPlan(false);
   };
 
   if (isLoading) {
@@ -83,6 +103,33 @@ export function ClientDetailScreen({
               </div>
             </div>
           </div>
+
+          {/* Toggle Premium */}
+          <button
+            onClick={handleTogglePremium}
+            disabled={isUpdatingPlan}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all mb-3 ${
+              isPremium
+                ? "bg-gradient-to-r from-primary/10 to-accent/10 border-primary/30"
+                : "bg-gray-50 border-gray-200"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Crown className={`w-5 h-5 ${isPremium ? "text-primary" : "text-gray-400"}`} />
+              <div className="text-left">
+                <p className={`text-[14px] font-medium ${isPremium ? "text-primary" : "text-gray-700"}`}>
+                  Plan Premium
+                </p>
+                <p className="text-[12px] text-gray-500">
+                  {isPremium ? "Cliente Premium activo" : "Activar plan Premium"}
+                </p>
+              </div>
+            </div>
+            {/* Toggle switch */}
+            <div className={`w-11 h-6 rounded-full transition-colors relative ${isPremium ? "bg-primary" : "bg-gray-300"}`}>
+              <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${isPremium ? "translate-x-5" : "translate-x-0.5"}`} />
+            </div>
+          </button>
 
           <div className="grid grid-cols-1 gap-2">
             <CTAButton

@@ -169,7 +169,7 @@ async getClientDetail(clientId: string) {
     try {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('full_name')
+        .select('full_name, plan_type')
         .eq('id', clientId)
         .single();
 
@@ -220,6 +220,7 @@ async getClientDetail(clientId: string) {
       return {
         id: clientId,
         name: profile?.full_name || "Cliente",
+        planType: (profile?.plan_type || "basic") as "basic" | "premium",
         adherence: 85,
         metrics,
         assignedPlans,

@@ -176,27 +176,34 @@ export function ClientHomeScreen({
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
-          <h3 className="font-semibold mb-3">Progreso esta semana</h3>
-          
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <MetricChip
-              label="Series"
-              value={`${progress.completedSets}/${progress.totalSets}`}
-              variant="primary"
-            />
-            <MetricChip
-              label="Workouts"
-              value={`${progress.completedWorkouts}/${progress.totalWorkouts}`}
-              variant="success"
-            />
+        {progress.completedWorkouts > 0 || upcomingWorkouts.length > 0 ? (
+          <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
+            <h3 className="font-semibold mb-3">Progreso esta semana</h3>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <MetricChip
+                label="Series"
+                value={`${progress.completedSets}/${progress.totalSets}`}
+                variant="primary"
+              />
+              <MetricChip
+                label="Workouts"
+                value={`${progress.completedWorkouts}/${progress.totalWorkouts}`}
+                variant="success"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-gray-600">
+              <Activity className="w-4 h-4" />
+              <span className="text-[14px]">Tiempo total: {progress.totalTime}</span>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-2 text-gray-600">
-            <Activity className="w-4 h-4" />
-            <span className="text-[14px]">Tiempo total: {progress.totalTime}</span>
+        ) : (
+          <div className="bg-white rounded-2xl p-4 border border-dashed border-border text-center">
+            <p className="text-[15px] text-gray-500">Todavía no tenés rutinas asignadas</p>
+            <p className="text-[13px] text-gray-400 mt-1">Contactá a tu entrenador para comenzar</p>
           </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <CTAButton
@@ -249,7 +256,7 @@ export function ClientHomeScreen({
               ))
             ) : (
               <div className="text-center py-8 text-gray-500 bg-white rounded-xl border border-dashed">
-                <p className="text-[15px]">No tenés rutinas asignadas</p>
+                <p className="text-[15px]">Todavía no tenés una rutina asignada</p>
                 <p className="text-[12px] text-gray-400 mt-1">Contactá a tu entrenador</p>
               </div>
             )}

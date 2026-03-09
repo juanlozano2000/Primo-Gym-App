@@ -25,6 +25,7 @@ export function ClientWorkoutsScreen({
   const [workouts, setWorkouts] = useState<WorkoutSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [coachName, setCoachName] = useState("Tu Entrenador");
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     const fetchWorkouts = async () => {
@@ -33,6 +34,13 @@ export function ClientWorkoutsScreen({
       
       const data = await clientService.getAllWorkouts(session.user.id);
       setWorkouts(data);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("plan_type")
+        .eq("id", session.user.id)
+        .single();
+      setIsPremium(profile?.plan_type === "premium");
 
       // Traer nombre del coach para WhatsApp
       const { data: relation } = await supabase
@@ -109,11 +117,13 @@ export function ClientWorkoutsScreen({
             )}
           </div>
 
-          <div className="lg:w-[320px] lg:sticky lg:top-[80px]">
-            <div className="mb-6">
-              <PremiumBanner onUpgrade={handleUpgradeClick} />
+          {!isPremium && (
+            <div className="lg:w-[320px] lg:sticky lg:top-[80px]">
+              <div className="mb-6">
+                <PremiumBanner onUpgrade={handleUpgradeClick} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
