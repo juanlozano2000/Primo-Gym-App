@@ -33,7 +33,7 @@ interface CreateTemplateModalProps {
 export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [weeks, setWeeks] = useState<number>(8);
+  const [weeksInput, setWeeksInput] = useState("8");
   const [days, setDays] = useState<number>(4);
   const [exercises, setExercises] = useState<Exercise[]>([]);
 
@@ -46,6 +46,11 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
     { reps: "", weight: "" },
   ]);
   const [newRest, setNewRest] = useState("60");
+  const weeks = Number.parseInt(weeksInput, 10) || 0;
+
+  const handleDaysChange = (value: number) => {
+    setDays(Math.min(7, Math.max(1, value)));
+  };
 
   const handleSetsChange = (sets: number) => {
     const normalizedSets = Math.min(8, Math.max(1, sets));
@@ -110,6 +115,16 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
       return;
     }
 
+    if (weeks < 1 || weeks > 52) {
+      toast.error("Las semanas deben ser entre 1 y 52");
+      return;
+    }
+
+    if (days < 1 || days > 7) {
+      toast.error("Los días por semana deben ser entre 1 y 7");
+      return;
+    }
+
     if (exercises.length === 0) {
       toast.error("Agregá al menos un ejercicio");
       return;
@@ -126,7 +141,7 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
     // Reset form
     setName("");
     setDescription("");
-    setWeeks(8);
+    setWeeksInput("8");
     setDays(4);
     setExercises([]);
     setNewExerciseName("");
@@ -193,8 +208,8 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
               </label>
               <input
                 type="number"
-                value={weeks}
-                onChange={(e) => setWeeks(parseInt(e.target.value) || 0)}
+                value={weeksInput}
+                onChange={(e) => setWeeksInput(e.target.value)}
                 min="1"
                 max="52"
                 className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
@@ -204,14 +219,36 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
               <label className="block text-[14px] mb-2 text-gray-700 font-medium">
                 Días/semana
               </label>
-              <input
-                type="number"
-                value={days}
-                onChange={(e) => setDays(parseInt(e.target.value) || 0)}
-                min="1"
-                max="7"
-                className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={days}
+                  readOnly
+                  min="1"
+                  max="7"
+                  className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 text-center font-semibold"
+                />
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    aria-label="Aumentar dias por semana"
+                    onClick={() => handleDaysChange(days + 1)}
+                    disabled={days >= 7}
+                    className="h-[22px] w-10 flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Disminuir dias por semana"
+                    onClick={() => handleDaysChange(days - 1)}
+                    disabled={days <= 1}
+                    className="h-[22px] w-10 flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -35,7 +35,7 @@ export interface PlanBasicInfo {
 export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) {
   const [planName, setPlanName] = useState("");
   const [description, setDescription] = useState("");
-  const [durationWeeks, setDurationWeeks] = useState<number>(8);
+  const [durationWeeksInput, setDurationWeeksInput] = useState("8");
   const [daysPerWeek, setDaysPerWeek] = useState<number>(4);
   const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
   
@@ -54,6 +54,11 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
   const [showExercises, setShowExercises] = useState(false);
 
   const hasExercises = selectedExercises && selectedExercises.length > 0;
+  const durationWeeks = Number.parseInt(durationWeeksInput, 10) || 0;
+
+  const handleDaysPerWeekChange = (days: number) => {
+    setDaysPerWeek(Math.min(7, Math.max(1, days)));
+  };
 
   const handleContinue = () => {
     // Validación
@@ -150,8 +155,8 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
               <div>
                 <input
                   type="number"
-                  value={durationWeeks}
-                  onChange={(e) => setDurationWeeks(parseInt(e.target.value) || 0)}
+                  value={durationWeeksInput}
+                  onChange={(e) => setDurationWeeksInput(e.target.value)}
                   min="1"
                   max="52"
                   className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
@@ -159,14 +164,36 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
                 <p className="text-[12px] text-gray-500 mt-1">Semanas</p>
               </div>
               <div>
-                <input
-                  type="number"
-                  value={daysPerWeek}
-                  onChange={(e) => setDaysPerWeek(parseInt(e.target.value) || 0)}
-                  min="1"
-                  max="7"
-                  className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={daysPerWeek}
+                    readOnly
+                    min="1"
+                    max="7"
+                    className="w-full h-12 px-4 rounded-xl bg-gray-50 border border-gray-200 text-center font-semibold"
+                  />
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      aria-label="Aumentar dias por semana"
+                      onClick={() => handleDaysPerWeekChange(daysPerWeek + 1)}
+                      disabled={daysPerWeek >= 7}
+                      className="h-[22px] w-10 flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Disminuir dias por semana"
+                      onClick={() => handleDaysPerWeekChange(daysPerWeek - 1)}
+                      disabled={daysPerWeek <= 1}
+                      className="h-[22px] w-10 flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
                 <p className="text-[12px] text-gray-500 mt-1">Días por semana</p>
               </div>
             </div>
@@ -204,7 +231,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
                 onClick={() => {
                   setPlanName(template.name);
                   setDescription(template.description);
-                  setDurationWeeks(template.weeks);
+                  setDurationWeeksInput(String(template.weeks));
                   setDaysPerWeek(template.days);
                   setSelectedExercises(template.exercises);
                   toast.success(`Template "${template.name}" aplicado con ${template.exercises.length} ejercicios`);
@@ -235,7 +262,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
                 onClick={() => {
                   setPlanName(template.name);
                   setDescription(template.desc);
-                  setDurationWeeks(template.weeks);
+                  setDurationWeeksInput(String(template.weeks));
                   setDaysPerWeek(template.days);
                   setSelectedExercises(null); // Limpiamos ejercicios para armarlos de cero
                   toast.success("Template aplicado");
@@ -352,7 +379,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
           
           setPlanName(template.name);
           setDescription(template.description);
-          setDurationWeeks(template.weeks);
+          setDurationWeeksInput(String(template.weeks));
           setDaysPerWeek(template.days);
           setSelectedExercises(template.exercises);
           
