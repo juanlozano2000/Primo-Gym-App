@@ -7,6 +7,7 @@ import { PlanBasicInfo } from "./CreatePlanScreen";
 import { WorkoutData } from "./AddWorkoutsScreen";
 import { ExercisePreviewModal } from "../../components/ExercisePreviewModal";
 import { planService, Exercise } from "../../services/planService";
+import { Switch } from "../../components/ui/switch";
 
 interface AddExercisesScreenProps {
   onBack: () => void;
@@ -56,6 +57,8 @@ export function AddExercisesScreen({
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [selectedExercisePreview, setSelectedExercisePreview] = useState<ExerciseData | null>(null);
   
+  const [customizeSeries, setCustomizeSeries] = useState(false);
+
   const [exerciseName, setExerciseName] = useState("");
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | undefined>(undefined); 
   const [totalSets, setTotalSets] = useState(3);
@@ -84,12 +87,17 @@ export function AddExercisesScreen({
   };
 
   const handleSeriesChange = (index: number, field: keyof SeriesData, value: string) => {
-    const newSeriesData = [...seriesData];
-    newSeriesData[index] = {
-      ...newSeriesData[index],
-      [field]: value || undefined
-    };
-    setSeriesData(newSeriesData);
+    if (!customizeSeries) {
+      // Bulk mode: copy the value to every series
+      setSeriesData(prev => prev.map(s => ({ ...s, [field]: value || undefined })));
+    } else {
+      const newSeriesData = [...seriesData];
+      newSeriesData[index] = {
+        ...newSeriesData[index],
+        [field]: value || undefined
+      };
+      setSeriesData(newSeriesData);
+    }
   };
 
   const handleAddExercise = () => {
@@ -135,6 +143,7 @@ export function AddExercisesScreen({
     setSeriesData([{}, {}, {}]);
     setRest("60");
     setNotes("");
+    setCustomizeSeries(false);
     setShowAddForm(false);
     setEditingId(null);
     setShowExerciseLibrary(false);
@@ -385,8 +394,21 @@ export function AddExercisesScreen({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[13px] text-gray-700 font-medium">Configuración por serie</label>
-                  <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-1 rounded">Opcional</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-500">
+                      {customizeSeries ? "Personalizada" : "Igual para todas"}
+                    </span>
+                    <Switch
+                      checked={customizeSeries}
+                      onCheckedChange={setCustomizeSeries}
+                    />
+                  </div>
                 </div>
+                {!customizeSeries && (
+                  <p className="text-[11px] text-primary bg-primary/5 px-3 py-2 rounded-lg">
+                    Editá cualquier campo y se copiará a todas las series. Activá "Personalizar" para configurar cada serie por separado.
+                  </p>
+                )}
                 
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {seriesData.map((serie, index) => (
