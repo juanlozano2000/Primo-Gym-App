@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
 import { CreateTemplateModal } from "../../components/CreateTemplateModal";
 import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../../context/AuthContext";
+import { planService, type CoachTemplate } from "../../services/planService";
 
 interface CreatePlanScreenProps {
   onBack: () => void;
@@ -33,15 +35,15 @@ export interface PlanBasicInfo {
 }
 
 export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) {
+  const { user } = useAuth();
   const [planName, setPlanName] = useState("");
   const [description, setDescription] = useState("");
   const [durationWeeksInput, setDurationWeeksInput] = useState("8");
   const [daysPerWeek, setDaysPerWeek] = useState<number>(4);
   const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
-  
-  // 🚨 Iniciamos vacío en lugar del mockData. 
-  // Se guardarán en memoria durante la sesión del coach.
-  const [customTemplates, setCustomTemplates] = useState<any[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [adminTemplates, setAdminTemplates] = useState<CoachTemplate[]>([]);
+  const [coachTemplates, setCoachTemplates] = useState<CoachTemplate[]>([]);
   
   const [selectedExercises, setSelectedExercises] = useState<Array<{
     id: string;
@@ -55,6 +57,20 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
 
   const hasExercises = selectedExercises && selectedExercises.length > 0;
   const durationWeeks = Number.parseInt(durationWeeksInput, 10) || 0;
+
+  useEffect(() => {
+    const loadTemplates = async () => {
+      if (!user?.id) return;
+
+      setIsLoadingTemplates(true);
+      const result = await planService.getTemplatesForCoach(user.id);
+      setAdminTemplates(result.adminTemplates);
+      setCoachTemplates(result.coachTemplates);
+      setIsLoadingTemplates(false);
+    };
+
+    loadTemplates();
+  }, [user?.id]);
 
   const handleDaysPerWeekChange = (days: number) => {
     setDaysPerWeek(Math.min(7, Math.max(1, days)));
@@ -86,6 +102,76 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
     };
 
     onContinue(planData);
+  };
+
+  const applyTemplate = (template: CoachTemplate, sourceLabel?: string) => {
+    setPlanName(template.name);
+    setDescription(template.description);
+    setDurationWeeksInput(String(template.weeks));
+    setDaysPerWeek(template.days);
+    setSelectedExercises(template.exercises);
+    setShowExercises(true);
+
+    const prefix = sourceLabel ? `${sourceLabel}: ` : "";
+    toast.success(`${prefix}Template \"${template.name}\" aplicado con ${template.exercises.length} ejercicios`);
+  };
+
+  const handleSaveTemplate = async (template: {
+    name: string;
+    description: string;
+    weeks: number;
+    days: number;
+    exercises: Array<{
+      id: string;
+      name: string;
+      totalSets: number;
+      seriesData: SeriesData[];
+      rest: string;
+    }>;
+  }) => {
+    if (!user?.id) {
+      toast.error("No se pudo identificar al coach para guardar el template");
+      return;
+    }
+
+    const payload = {
+      title: template.name,
+      description: template.description,
+      isTemplate: true,
+      durationWeeks: template.weeks,
+      items: template.exercises.map((exercise) => ({
+        exerciseId: undefined,
+        name: exercise.name,
+        sets: exercise.totalSets,
+        restSeconds: Number.parseInt(exercise.rest, 10) || 60,
+        seriesData: exercise.seriesData.map((set) => ({
+          reps: set.reps,
+          weight: set.weight,
+          time: set.time,
+          rir: set.rir,
+        })),
+      })),
+    };
+
+    const saveResult = await planService.createWorkoutPlan(user.id, payload);
+
+    if (!saveResult.success) {
+      toast.error("No se pudo guardar el template en la base de datos");
+      return;
+    }
+
+    const templatesResult = await planService.getTemplatesForCoach(user.id);
+    setAdminTemplates(templatesResult.adminTemplates);
+    setCoachTemplates(templatesResult.coachTemplates);
+
+    setPlanName(template.name);
+    setDescription(template.description);
+    setDurationWeeksInput(String(template.weeks));
+    setDaysPerWeek(template.days);
+    setSelectedExercises(template.exercises);
+    setShowExercises(true);
+    setIsCreateTemplateModalOpen(false);
+    toast.success(`Template \"${template.name}\" creado y aplicado`);
   };
 
   return (
@@ -224,57 +310,93 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
           </div>
 
           <div className="space-y-2">
-            {/* Templates personalizados (creados en memoria) */}
-            {customTemplates.map((template) => (
-              <button
-                key={template.id}
-                onClick={() => {
-                  setPlanName(template.name);
-                  setDescription(template.description);
-                  setDurationWeeksInput(String(template.weeks));
-                  setDaysPerWeek(template.days);
-                  setSelectedExercises(template.exercises);
-                  toast.success(`Template "${template.name}" aplicado con ${template.exercises.length} ejercicios`);
-                }}
-                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] relative shadow-sm"
-              >
-                <div className="absolute top-3 right-3">
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-accent/10 text-accent font-semibold">
-                    PERSONALIZADO
-                  </span>
-                </div>
-                <h4 className="text-[15px] font-medium mb-1 pr-24">{template.name}</h4>
-                <p className="text-[13px] text-gray-600 mb-2">
-                  {template.weeks} semanas · {template.days} días/semana · {template.exercises.length} ejercicios
-                </p>
-                <p className="text-[12px] text-gray-500">{template.description}</p>
-              </button>
-            ))}
+            {/* Templates admin para todos los coaches */}
+            {adminTemplates.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[12px] uppercase tracking-wide text-gray-500 font-semibold px-1">Templates del admin</p>
+                {adminTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => applyTemplate(template, "Admin")}
+                    className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] relative shadow-sm"
+                  >
+                    <div className="absolute top-3 right-3">
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary font-semibold">
+                        ADMIN
+                      </span>
+                    </div>
+                    <h4 className="text-[15px] font-medium mb-1 pr-24">{template.name}</h4>
+                    <p className="text-[13px] text-gray-600 mb-2">
+                      {template.weeks} semanas · {template.days} días/semana · {template.exercises.length} ejercicios
+                    </p>
+                    <p className="text-[12px] text-gray-500">{template.description || "Sin descripción"}</p>
+                  </button>
+                ))}
+              </div>
+            )}
 
-            {/* Templates sugeridos */}
-            {[
-              { name: "Hipertrofia 4 días", weeks: 8, days: 4, desc: "Enfoque en volumen muscular" },
-              { name: "Fuerza 3 días", weeks: 12, days: 3, desc: "Movimientos básicos + accesorios" },
-              { name: "Definición 5 días", weeks: 6, days: 5, desc: "Alta frecuencia + cardio" },
-            ].map((template, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setPlanName(template.name);
-                  setDescription(template.desc);
-                  setDurationWeeksInput(String(template.weeks));
-                  setDaysPerWeek(template.days);
-                  setSelectedExercises(null); // Limpiamos ejercicios para armarlos de cero
-                  toast.success("Template aplicado");
-                }}
-                className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] shadow-sm"
-              >
-                <h4 className="text-[15px] font-medium mb-1">{template.name}</h4>
-                <p className="text-[13px] text-gray-600">
-                  {template.weeks} semanas · {template.days} días/semana · {template.desc}
-                </p>
-              </button>
-            ))}
+            {/* Templates creados por el coach */}
+            {coachTemplates.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[12px] uppercase tracking-wide text-gray-500 font-semibold px-1">Mis templates</p>
+                {coachTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => applyTemplate(template)}
+                    className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] relative shadow-sm"
+                  >
+                    <div className="absolute top-3 right-3">
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-accent/10 text-accent font-semibold">
+                        MIO
+                      </span>
+                    </div>
+                    <h4 className="text-[15px] font-medium mb-1 pr-24">{template.name}</h4>
+                    <p className="text-[13px] text-gray-600 mb-2">
+                      {template.weeks} semanas · {template.days} días/semana · {template.exercises.length} ejercicios
+                    </p>
+                    <p className="text-[12px] text-gray-500">{template.description || "Sin descripción"}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {isLoadingTemplates && (
+              <p className="text-[13px] text-gray-500 px-1">Cargando templates...</p>
+            )}
+
+            {!isLoadingTemplates && adminTemplates.length === 0 && coachTemplates.length === 0 && (
+              <p className="text-[13px] text-gray-500 px-1">
+                No hay templates guardados todavía. Usá el botón + para crear el primero.
+              </p>
+            )}
+
+            {/* Templates sugeridos al final */}
+            <div className="space-y-2 pt-1">
+              <p className="text-[12px] uppercase tracking-wide text-gray-500 font-semibold px-1">Plantillas rápidas sugeridas</p>
+              {[
+                { name: "Hipertrofia 4 días", weeks: 8, days: 4, desc: "Enfoque en volumen muscular" },
+                { name: "Fuerza 3 días", weeks: 12, days: 3, desc: "Movimientos básicos + accesorios" },
+                { name: "Definición 5 días", weeks: 6, days: 5, desc: "Alta frecuencia + cardio" },
+              ].map((template, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setPlanName(template.name);
+                    setDescription(template.desc);
+                    setDurationWeeksInput(String(template.weeks));
+                    setDaysPerWeek(template.days);
+                    setSelectedExercises(null); // Limpiamos ejercicios para armarlos de cero
+                    toast.success("Template aplicado");
+                  }}
+                  className="w-full bg-white rounded-xl p-3 border border-border text-left hover:border-primary hover:bg-primary/5 transition-all active:scale-[0.98] shadow-sm"
+                >
+                  <h4 className="text-[15px] font-medium mb-1">{template.name}</h4>
+                  <p className="text-[13px] text-gray-600">
+                    {template.weeks} semanas · {template.days} días/semana · {template.desc}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -367,24 +489,7 @@ export function CreatePlanScreen({ onBack, onContinue }: CreatePlanScreenProps) 
         isOpen={isCreateTemplateModalOpen}
         onClose={() => setIsCreateTemplateModalOpen(false)}
         onSave={(template) => {
-          const newTemplate = {
-            id: `t${customTemplates.length + 1}`,
-            name: template.name,
-            description: template.description,
-            weeks: template.weeks,
-            days: template.days,
-            exercises: template.exercises,
-          };
-          setCustomTemplates([...customTemplates, newTemplate]);
-          
-          setPlanName(template.name);
-          setDescription(template.description);
-          setDurationWeeksInput(String(template.weeks));
-          setDaysPerWeek(template.days);
-          setSelectedExercises(template.exercises);
-          
-          setIsCreateTemplateModalOpen(false);
-          toast.success(`Template "${template.name}" creado y aplicado`);
+          void handleSaveTemplate(template);
         }}
       />
     </div>

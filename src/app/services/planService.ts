@@ -30,8 +30,109 @@ export interface WorkoutPlanPayload {
   items: WorkoutItemPayload[];
 }
 
+export interface CoachTemplate {
+  id: string;
+  name: string;
+  description: string;
+  weeks: number;
+  days: number;
+  exercises: Array<{
+    id: string;
+    exerciseId?: string;
+    name: string;
+    totalSets: number;
+    seriesData: SetDetail[];
+    rest: string;
+  }>;
+  source: 'admin' | 'coach';
+}
+
 // --- EL SERVICIO ---
 export const planService = {
+
+  async getTemplatesForCoach(coachId: string): Promise<{ adminTemplates: CoachTemplate[]; coachTemplates: CoachTemplate[] }> {
+    try {
+      const { data: adminProfiles, error: adminsErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'admin');
+
+      if (adminsErr) throw adminsErr;
+
+      const adminIds = (adminProfiles || []).map((p: { id: string }) => p.id);
+      const ownerIds = [coachId, ...adminIds];
+
+      if (ownerIds.length === 0) {
+        return { adminTemplates: [], coachTemplates: [] };
+      }
+
+      const { data: rawTemplates, error: templatesErr } = await supabase
+        .from('workouts')
+        .select(`
+          id,
+          title,
+          description,
+          duration_weeks,
+          coach_id,
+          workout_items (
+            id,
+            sets,
+            rest_time_seconds,
+            order_index,
+            exercise_id,
+            exercises (id, name),
+            workout_item_sets (set_number, reps_target, weight_target, rir_target)
+          )
+        `)
+        .eq('is_template', true)
+        .in('coach_id', ownerIds)
+        .order('created_at', { ascending: false });
+
+      if (templatesErr) throw templatesErr;
+
+      const mappedTemplates: CoachTemplate[] = (rawTemplates || []).map((template: any) => {
+        const workoutItems = (template.workout_items || []).sort((a: any, b: any) => (a.order_index || 0) - (b.order_index || 0));
+
+        const exercises = workoutItems.map((item: any) => {
+          const exerciseData = Array.isArray(item.exercises) ? item.exercises[0] : item.exercises;
+          const sets = (item.workout_item_sets || []).sort((a: any, b: any) => a.set_number - b.set_number);
+
+          const seriesData: SetDetail[] = sets.map((serie: any) => ({
+            reps: serie.reps_target ? String(serie.reps_target) : undefined,
+            weight: serie.weight_target !== null && serie.weight_target !== undefined ? String(serie.weight_target) : undefined,
+            rir: serie.rir_target !== null && serie.rir_target !== undefined ? String(serie.rir_target) : undefined,
+          }));
+
+          return {
+            id: item.id,
+            exerciseId: item.exercise_id,
+            name: exerciseData?.name || 'Ejercicio',
+            totalSets: item.sets || seriesData.length || 1,
+            seriesData,
+            rest: `${item.rest_time_seconds || 60}s`,
+          };
+        });
+
+        return {
+          id: template.id,
+          name: template.title,
+          description: template.description || '',
+          weeks: template.duration_weeks || 8,
+          days: Math.max(1, Math.min(7, workoutItems.length || 1)),
+          exercises,
+          source: adminIds.includes(template.coach_id) ? 'admin' : 'coach',
+        };
+      });
+
+      return {
+        adminTemplates: mappedTemplates.filter((t) => t.source === 'admin'),
+        coachTemplates: mappedTemplates.filter((t) => t.source === 'coach'),
+      };
+    } catch (error) {
+      console.error('Error fetching templates for coach:', error);
+      return { adminTemplates: [], coachTemplates: [] };
+    }
+  },
   
   // 1. Obtener la lista de ejercicios para el buscador/selector
   async getExercises(): Promise<Exercise[]> {
