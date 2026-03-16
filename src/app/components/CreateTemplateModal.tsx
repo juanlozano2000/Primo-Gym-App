@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Plus, Trash2 } from "lucide-react";
+import { X, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { CTAButton } from "./CTAButton";
 import { toast } from "sonner";
 
@@ -48,8 +48,9 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
   const [newRest, setNewRest] = useState("60");
 
   const handleSetsChange = (sets: number) => {
-    setNewTotalSets(sets);
-    const newData = Array.from({ length: sets }, (_, i) => 
+    const normalizedSets = Math.min(8, Math.max(1, sets));
+    setNewTotalSets(normalizedSets);
+    const newData = Array.from({ length: normalizedSets }, (_, i) => 
       newSeriesData[i] || { reps: "", weight: "" }
     );
     setNewSeriesData(newData);
@@ -228,19 +229,39 @@ export function CreateTemplateModal({ isOpen, onClose, onSave }: CreateTemplateM
             />
 
             {/* Series y descanso */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
               <div>
                 <label className="block text-[12px] mb-1.5 text-gray-700 font-medium">
                   Series *
                 </label>
-                <input
-                  type="number"
-                  value={newTotalSets}
-                  onChange={(e) => handleSetsChange(parseInt(e.target.value) || 1)}
-                  min="1"
-                  max="8"
-                  className="w-full h-10 px-3 rounded-lg bg-white border border-gray-200 focus:border-primary focus:outline-none text-center font-semibold text-[14px]"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={newTotalSets}
+                    readOnly
+                    min="1"
+                    max="8"
+                    className="flex-1 h-10 px-3 rounded-lg bg-white border border-gray-200 text-center font-semibold text-[14px]"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Disminuir series"
+                    onClick={() => handleSetsChange(newTotalSets - 1)}
+                    disabled={newTotalSets <= 1}
+                    className="h-10 w-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Aumentar series"
+                    onClick={() => handleSetsChange(newTotalSets + 1)}
+                    disabled={newTotalSets >= 8}
+                    className="h-10 w-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-[12px] mb-1.5 text-gray-700 font-medium">
