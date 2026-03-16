@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Plus, Trash2, Edit3, Search, Eye } from "lucide-react";
+import { Plus, Trash2, Edit3, Search, Eye, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { PlanBasicInfo } from "./CreatePlanScreen";
 import { WorkoutData } from "./AddWorkoutsScreen";
@@ -75,8 +75,9 @@ export function AddExercisesScreen({
   }, []);
 
   const handleSetsChange = (sets: number) => {
-    setTotalSets(sets);
-    const newSeriesData = Array.from({ length: sets }, (_, i) => 
+    const normalizedSets = Math.min(8, Math.max(1, sets));
+    setTotalSets(normalizedSets);
+    const newSeriesData = Array.from({ length: normalizedSets }, (_, i) => 
       seriesData[i] || {}
     );
     setSeriesData(newSeriesData);
@@ -330,17 +331,37 @@ export function AddExercisesScreen({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div>
                 <label className="block text-[13px] mb-2 text-gray-700 font-medium">Cantidad de series *</label>
-                <input
-                  type="number"
-                  value={totalSets}
-                  onChange={(e) => handleSetsChange(parseInt(e.target.value) || 1)}
-                  min="1"
-                  max="8"
-                  className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-center font-semibold text-[15px]"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={totalSets}
+                    readOnly
+                    min="1"
+                    max="8"
+                    className="flex-1 h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 text-center font-semibold text-[15px]"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Disminuir series"
+                    onClick={() => handleSetsChange(totalSets - 1)}
+                    disabled={totalSets <= 1}
+                    className="h-11 w-11 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Aumentar series"
+                    onClick={() => handleSetsChange(totalSets + 1)}
+                    disabled={totalSets >= 8}
+                    className="h-11 w-11 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div>

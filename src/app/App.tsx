@@ -28,6 +28,7 @@ import { CreatePlanScreen, PlanBasicInfo } from "./screens/coach/CreatePlanScree
 import { AddWorkoutsScreen, WorkoutData } from "./screens/coach/AddWorkoutsScreen";
 import { AddExercisesScreen, WorkoutExercises } from "./screens/coach/AddExercisesScreen";
 import { AssignPlanScreen } from "./screens/coach/AssignPlanScreen";
+import { AttendanceHistoryScreen } from "./screens/coach/AttendanceHistoryScreen";
 
 type ClientTab = "home" | "workouts" | "account";
 type CoachTab = "home" | "clients" | "account";
@@ -47,7 +48,8 @@ type CoachScreen =
   | { type: "create-plan" }
   | { type: "add-workouts"; planData: PlanBasicInfo }
   | { type: "add-exercises"; planData: PlanBasicInfo; workouts: WorkoutData[] }
-  | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[]; workoutExercises: WorkoutExercises[] };
+  | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[]; workoutExercises: WorkoutExercises[] }
+  | { type: "attendance-history"; clientId: string };
 
 function AppContent() {
   const { user, isAuthenticated, loading } = useAuth();
@@ -157,6 +159,10 @@ function AppContent() {
     setCoachScreen({ type: "assign-plan", planData, workouts, workoutExercises });
   };
 
+  const navigateToAttendanceHistory = (clientId: string) => {
+    setCoachScreen({ type: "attendance-history", clientId });
+  };
+
   const navigateBackToCoachHome = () => {
     setCoachTab("home");
     setCoachScreen({ type: "home" });
@@ -252,8 +258,15 @@ function AppContent() {
           <ClientDetailScreen
             clientId={coachScreen.clientId}
             onBack={navigateBackToClients}
-            // 🚨 Pasamos el clientId a la función de editar
-            onEditPlan={() => navigateToEditPlan(coachScreen.clientId)} 
+            onEditPlan={() => navigateToEditPlan(coachScreen.clientId)}
+            onViewAttendance={() => navigateToAttendanceHistory(coachScreen.clientId)}
+          />
+        )}
+
+        {coachScreen.type === "attendance-history" && (
+          <AttendanceHistoryScreen
+            clientId={coachScreen.clientId}
+            onBack={() => navigateBackToClientDetail(coachScreen.clientId)}
           />
         )}
         

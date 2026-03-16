@@ -1,6 +1,6 @@
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown, Trash2 } from "lucide-react";
+import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown, Trash2, CalendarCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { dashboardService } from "../../services/dashboardService";
@@ -10,12 +10,14 @@ interface ClientDetailScreenProps {
   clientId: string;
   onBack: () => void;
   onEditPlan: () => void;
+  onViewAttendance: () => void;
 }
 
 export function ClientDetailScreen({
   clientId,
   onBack,
   onEditPlan,
+  onViewAttendance,
 }: ClientDetailScreenProps) {
   
   // 🚨 Estado para guardar la data real
@@ -181,6 +183,15 @@ export function ClientDetailScreen({
               fullWidth
             >
               Editar plan
+            </CTAButton>
+            <CTAButton
+              variant="secondary"
+              size="small"
+              icon={CalendarCheck}
+              onClick={onViewAttendance}
+              fullWidth
+            >
+              Ver asistencia
             </CTAButton>
           </div>
         </div>

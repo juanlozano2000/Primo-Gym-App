@@ -270,5 +270,202 @@ async getClientDetail(clientId: string) {
       console.error("Error fetching client details:", error);
       return null;
     }
+  },
+
+  // --- Función 4: Historial de asistencia real para un cliente ---
+  async getClientAttendanceHistory(clientId: string) {
+    if (!clientId || clientId.length < 10) return null;
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', clientId)
+        .single();
+
+      const { data: assignedData } = await supabase
+        .from('assigned_plans')
+        .select(`
+          id, workout_id, scheduled_date, is_completed,
+          workouts!assigned_plans_workout_id_fkey(title, duration_weeks)
+        `)
+        .eq('client_id', clientId)
+        .order('scheduled_date', { ascending: true });
+
+      if (!assignedData || assignedData.length === 0) return null;
+
+      // Agrupar assigned_plans en "bloques de plan" (asignaciones consecutivas con <7 días de gap)
+      const batches: (typeof assignedData)[] = [];
+      let currentBatch = [assignedData[0]];
+
+      for (let i = 1; i < assignedData.length; i++) {
+        const prev = new Date(assignedData[i - 1].scheduled_date + 'T12:00:00');
+        const curr = new Date(assignedData[i].scheduled_date + 'T12:00:00');
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= 7) {
+          currentBatch.push(assignedData[i]);
+        } else {
+          batches.push(currentBatch);
+          currentBatch = [assignedData[i]];
+        }
+      }
+      batches.push(currentBatch);
+
+      // Procesar el último bloque (plan actual)
+      const batch = batches[batches.length - 1];
+      const workoutInfo: any = Array.isArray(batch[0].workouts)
+        ? batch[0].workouts[0]
+        : batch[0].workouts;
+
+      const durationWeeks = workoutInfo?.duration_weeks || 4;
+      const daysPerWeek = batch.length;
+      const planName = (workoutInfo?.title || 'Plan').split(' - ')[0].trim();
+      const startDateStr = batch[0].scheduled_date;
+
+      // Días de la semana programados (basados en los scheduled_date del plan)
+      const scheduledDayIndices = batch.map(ap =>
+        new Date(ap.scheduled_date + 'T12:00:00').getDay()
+      );
+
+      const workoutIds = batch.map(ap => ap.workout_id);
+
+      // Sesiones reales del cliente para estos workouts
+      const { data: sessions } = await supabase
+        .from('workout_sessions')
+        .select('ended_at')
+        .eq('client_id', clientId)
+        .in('workout_id', workoutIds)
+        .not('ended_at', 'is', null);
+
+      const sessionDates = new Set<string>();
+      sessions?.forEach(s => {
+        const d = new Date(s.ended_at);
+        sessionDates.add(
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        );
+      });
+
+      // Calcular el lunes de la semana de inicio
+      const startDate = new Date(startDateStr + 'T12:00:00');
+      const dow = startDate.getDay();
+      const mondayOffset = dow === 0 ? -6 : 1 - dow;
+      const firstMonday = new Date(startDate);
+      firstMonday.setDate(firstMonday.getDate() + mondayOffset);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      const dayLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+      const weeks: any[] = [];
+      let totalAttended = 0;
+      const streakDays: boolean[] = [];
+
+      for (let w = 0; w < durationWeeks; w++) {
+        const weekMonday = new Date(firstMonday);
+        weekMonday.setDate(weekMonday.getDate() + w * 7);
+
+        const weekSunday = new Date(weekMonday);
+        weekSunday.setDate(weekSunday.getDate() + 6);
+        weekSunday.setHours(0, 0, 0, 0);
+        const isWeekPast = weekSunday < today;
+
+        const rawDays: {
+          label: string; dateStr: string; dayOfWeek: number;
+          attended: boolean; isFuture: boolean; isScheduled: boolean; isToday: boolean;
+        }[] = [];
+
+        let weekAttended = 0;
+
+        for (let d = 0; d < 7; d++) {
+          const dayDate = new Date(weekMonday);
+          dayDate.setDate(dayDate.getDate() + d);
+          dayDate.setHours(0, 0, 0, 0);
+
+          const dateStr = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, '0')}-${String(dayDate.getDate()).padStart(2, '0')}`;
+          const dayOfWeek = dayDate.getDay();
+          const attended = sessionDates.has(dateStr);
+          const isFuture = dayDate > today;
+          const isScheduled = scheduledDayIndices.includes(dayOfWeek);
+          const isToday = dateStr === todayStr;
+
+          if (attended) weekAttended++;
+
+          rawDays.push({ label: dayLabels[d], dateStr, dayOfWeek, attended, isFuture, isScheduled, isToday });
+        }
+
+        totalAttended += weekAttended;
+
+        // Determinar estado de cada día
+        let missedToMark = isWeekPast ? Math.max(0, daysPerWeek - weekAttended) : 0;
+
+        const days = rawDays.map(rd => {
+          let status: 'attended' | 'missed' | 'rest' | 'future';
+
+          if (rd.attended) {
+            status = 'attended';
+          } else if (rd.isFuture) {
+            status = rd.isScheduled ? 'future' : 'rest';
+          } else if (missedToMark > 0 && rd.isScheduled) {
+            status = 'missed';
+            missedToMark--;
+          } else {
+            status = 'rest';
+          }
+
+          // Tracking de racha: solo días programados pasados (hoy solo si asistió)
+          if (rd.isScheduled && !rd.isFuture) {
+            if (!rd.isToday || rd.attended) {
+              streakDays.push(rd.attended);
+            }
+          }
+
+          return { day: rd.label, date: rd.dateStr, status };
+        });
+
+        weeks.push({
+          weekNumber: w + 1,
+          weekLabel: `Semana ${w + 1}`,
+          planName,
+          daysPerWeek,
+          completedDays: Math.min(weekAttended, daysPerWeek),
+          days,
+        });
+      }
+
+      // Calcular rachas
+      let longestStreak = 0;
+      let tempStreak = 0;
+      for (const a of streakDays) {
+        if (a) { tempStreak++; longestStreak = Math.max(longestStreak, tempStreak); }
+        else { tempStreak = 0; }
+      }
+
+      let currentStreak = 0;
+      for (let i = streakDays.length - 1; i >= 0; i--) {
+        if (streakDays[i]) currentStreak++;
+        else break;
+      }
+
+      const totalScheduled = durationWeeks * daysPerWeek;
+      const adherence = totalScheduled > 0 ? Math.round((totalAttended / totalScheduled) * 100) : 0;
+
+      return {
+        clientName: profile?.full_name || 'Cliente',
+        adherence,
+        planName,
+        durationWeeks,
+        daysPerWeek,
+        totalDaysAttended: totalAttended,
+        totalDaysScheduled: totalScheduled,
+        currentStreak,
+        longestStreak,
+        weeks,
+      };
+    } catch (error) {
+      console.error('Error fetching attendance history:', error);
+      return null;
+    }
   }
 };
