@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { Home, Dumbbell, User } from "lucide-react";
 
@@ -51,6 +51,79 @@ type CoachScreen =
   | { type: "assign-plan"; planData: PlanBasicInfo; workouts: WorkoutData[]; workoutExercises: WorkoutExercises[] }
   | { type: "attendance-history"; clientId: string };
 
+type PersistedNavigationState = {
+  role: "client" | "coach";
+  clientTab: ClientTab;
+  clientScreen: ClientScreen;
+  coachTab: CoachTab;
+  coachScreen: CoachScreen;
+};
+
+const NAV_STATE_PREFIX = "spoter_navigation_state_";
+
+const isClientTab = (value: unknown): value is ClientTab =>
+  value === "home" || value === "workouts" || value === "account";
+
+const isCoachTab = (value: unknown): value is CoachTab =>
+  value === "home" || value === "clients" || value === "account";
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isClientScreen = (value: unknown): value is ClientScreen => {
+  if (!isObject(value) || typeof value.type !== "string") return false;
+
+  if (value.type === "home" || value.type === "workouts" || value.type === "account") {
+    return true;
+  }
+
+  if (value.type === "workout-detail") {
+    return typeof value.workoutId === "string";
+  }
+
+  return false;
+};
+
+const isCoachScreen = (value: unknown): value is CoachScreen => {
+  if (!isObject(value) || typeof value.type !== "string") return false;
+
+  if (value.type === "home" || value.type === "clients" || value.type === "account" || value.type === "create-plan") {
+    return true;
+  }
+
+  if (value.type === "client-detail" || value.type === "edit-plan" || value.type === "attendance-history") {
+    return typeof value.clientId === "string";
+  }
+
+  if (value.type === "add-workouts") {
+    return isObject(value.planData);
+  }
+
+  if (value.type === "add-exercises") {
+    return isObject(value.planData) && Array.isArray(value.workouts);
+  }
+
+  if (value.type === "assign-plan") {
+    return isObject(value.planData) && Array.isArray(value.workouts) && Array.isArray(value.workoutExercises);
+  }
+
+  return false;
+};
+
+const isPersistedNavigationState = (value: unknown): value is PersistedNavigationState => {
+  if (!isObject(value)) return false;
+
+  const role = value.role;
+  if (role !== "client" && role !== "coach") return false;
+
+  return (
+    isClientTab(value.clientTab) &&
+    isClientScreen(value.clientScreen) &&
+    isCoachTab(value.coachTab) &&
+    isCoachScreen(value.coachScreen)
+  );
+};
+
 function AppContent() {
   const { user, isAuthenticated, loading } = useAuth();
   
@@ -61,6 +134,56 @@ function AppContent() {
   // Coach state
   const [coachTab, setCoachTab] = useState<CoachTab>("home");
   const [coachScreen, setCoachScreen] = useState<CoachScreen>({ type: "home" });
+  const [hasRestoredNavigation, setHasRestoredNavigation] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setHasRestoredNavigation(false);
+      return;
+    }
+
+    const navStateKey = `${NAV_STATE_PREFIX}${user.id}`;
+    const rawState = localStorage.getItem(navStateKey);
+
+    if (!rawState) {
+      setHasRestoredNavigation(true);
+      return;
+    }
+
+    try {
+      const parsedState = JSON.parse(rawState) as unknown;
+
+      if (!isPersistedNavigationState(parsedState) || parsedState.role !== user.role) {
+        localStorage.removeItem(navStateKey);
+        setHasRestoredNavigation(true);
+        return;
+      }
+
+      setClientTab(parsedState.clientTab);
+      setClientScreen(parsedState.clientScreen);
+      setCoachTab(parsedState.coachTab);
+      setCoachScreen(parsedState.coachScreen);
+    } catch {
+      localStorage.removeItem(navStateKey);
+    }
+
+    setHasRestoredNavigation(true);
+  }, [isAuthenticated, user]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user || !hasRestoredNavigation) return;
+
+    const navStateKey = `${NAV_STATE_PREFIX}${user.id}`;
+    const stateToPersist: PersistedNavigationState = {
+      role: user.role,
+      clientTab,
+      clientScreen,
+      coachTab,
+      coachScreen,
+    };
+
+    localStorage.setItem(navStateKey, JSON.stringify(stateToPersist));
+  }, [isAuthenticated, user, hasRestoredNavigation, clientTab, clientScreen, coachTab, coachScreen]);
 
   // Tab items para Cliente
   const clientTabs: TabItem[] = [
