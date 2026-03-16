@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { CheckCircle2, Circle, Clock, Eye, List, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Eye, List, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { ExercisePreviewModal } from "../../components/ExercisePreviewModal";
 import { useAuth } from "../../context/AuthContext";
@@ -11,6 +11,15 @@ interface WorkoutDetailScreenProps {
   workoutId: string;
   onBack: () => void;
 }
+
+type WorkoutProgress = {
+  workoutId: string;
+  currentExerciseIndex: number;
+  completedExercises: string[];
+  timestamp: number;
+};
+
+const WORKOUT_PROGRESS_PREFIX = "spoter_workout_progress_";
 
 export function WorkoutDetailScreen({
   workoutId,
@@ -30,17 +39,74 @@ export function WorkoutDetailScreen({
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<any>(null);
   const [isSeriesDetailModalOpen, setIsSeriesDetailModalOpen] = useState(false);
+  
+  // 🚨 Nuevos estados para persistencia
+  const [hasUnsavedProgress, setHasUnsavedProgress] = useState(false);
+  const [showConfirmDiscardModal, setShowConfirmDiscardModal] = useState(false);
+  const pendingNavigationRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const fetchWorkoutDetail = async () => {
       setIsLoading(true);
       const data = await clientService.getWorkoutDetail(workoutId);
       setWorkout(data);
+      
+      // 🚨 Restaurar progreso guardado del localStorage
+      if (session?.user?.id) {
+        const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+        const saved = localStorage.getItem(progressKey);
+        
+        if (saved) {
+          try {
+            const progress = JSON.parse(saved) as WorkoutProgress;
+            // Solo restaurar si fue guardado hace menos de 12 horas
+            if (Date.now() - progress.timestamp < 12 * 60 * 60 * 1000) {
+              setCurrentExerciseIndex(progress.currentExerciseIndex);
+              setCompletedExercises(progress.completedExercises);
+              toast.success("Progreso anterior restaurado ✓", { duration: 3000 });
+            } else {
+              localStorage.removeItem(progressKey);
+            }
+          } catch (e) {
+            console.warn("[Workout] Progreso guardado corrupto, ignorando.");
+          }
+        }
+      }
+      
       setIsLoading(false);
     };
 
     if (workoutId) fetchWorkoutDetail();
-  }, [workoutId]);
+  }, [workoutId, session?.user?.id]);
+
+  // 🚨 Efecto: Guardar progreso automáticamente
+  useEffect(() => {
+    if (!session?.user?.id || !workout) return;
+
+    const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+    const progress: WorkoutProgress = {
+      workoutId,
+      currentExerciseIndex,
+      completedExercises,
+      timestamp: Date.now(),
+    };
+
+    localStorage.setItem(progressKey, JSON.stringify(progress));
+    setHasUnsavedProgress(false);
+  }, [currentExerciseIndex, completedExercises, workoutId, session?.user?.id, workout]);
+
+  // 🚨 Efecto: Advertencia al refrescar si hay progreso
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedProgress) {
+        e.preventDefault();
+        e.returnValue = "¿Estás seguro de que deseas salir? Tu progreso será guardado automáticamente.";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedProgress]);
 
   if (isLoading) {
     return (
@@ -72,6 +138,7 @@ export function WorkoutDetailScreen({
   const handleMarkAsDone = () => {
     if (!isExerciseCompleted) {
       setCompletedExercises([...completedExercises, currentExercise.id]);
+      setHasUnsavedProgress(true);
       toast.success("Ejercicio completado");
       
       const restSeconds = parseInt(currentExercise.rest) || 60;
@@ -94,6 +161,7 @@ export function WorkoutDetailScreen({
   const handleNext = () => {
     if (!isLastExercise) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
+      setHasUnsavedProgress(true);
       setIsResting(false);
     }
   };
@@ -101,6 +169,7 @@ export function WorkoutDetailScreen({
   const handlePrevious = () => {
     if (currentExerciseIndex > 0) {
       setCurrentExerciseIndex(currentExerciseIndex - 1);
+      setHasUnsavedProgress(true);
       setIsResting(false);
     }
   };
@@ -117,6 +186,12 @@ export function WorkoutDetailScreen({
     
     if (success) {
       toast.success("¡Workout completado! Progreso guardado. 💪", { duration: 4000 });
+      // Limpiar progreso guardado al terminar
+      if (session?.user?.id) {
+        const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+        localStorage.removeItem(progressKey);
+      }
+      setHasUnsavedProgress(false);
       onBack();
     } else {
       toast.error("Hubo un error al guardar el progreso.");
@@ -124,9 +199,39 @@ export function WorkoutDetailScreen({
     }
   };
 
+  const handleBackWithConfirmation = () => {
+    if (hasUnsavedProgress && completedExercises.length > 0) {
+      pendingNavigationRef.current = onBack;
+      setShowConfirmDiscardModal(true);
+    } else {
+      onBack();
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowConfirmDiscardModal(false);
+    if (pendingNavigationRef.current) {
+      pendingNavigationRef.current();
+    }
+  };
+
+  const handleSaveManually = () => {
+    if (session?.user?.id) {
+      const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+      const progress: WorkoutProgress = {
+        workoutId,
+        currentExerciseIndex,
+        completedExercises,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(progressKey, JSON.stringify(progress));
+      toast.success("Progreso guardado ✓", { duration: 2000 });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <AppBar title={workout.title} onBack={onBack} />
+      <AppBar title={workout.title} onBack={handleBackWithConfirmation} />
 
       <div className="px-4 py-6 max-w-5xl mx-auto lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)] lg:gap-6 lg:items-start lg:space-y-0 space-y-6">
         <div className="space-y-6">
@@ -200,7 +305,15 @@ export function WorkoutDetailScreen({
             >
               {isExerciseCompleted ? "Ejercicio completado" : "Marcar como hecho"}
             </CTAButton>
-          </div>
+            {completedExercises.length > 0 && (
+              <button
+                onClick={handleSaveManually}
+                className="w-full px-4 py-3 bg-success/10 border border-success/30 rounded-xl text-success font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-success/20 transition-all active:scale-[0.98]"
+              >
+                <Save className="w-4 h-4" />
+                Guardar progreso ({completedExercises.length} ejercicios)
+              </button>
+            )}          </div>
 
           <div className="flex gap-3">
             <CTAButton
@@ -316,6 +429,31 @@ export function WorkoutDetailScreen({
             </div>
             <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
               <button onClick={() => setIsSeriesDetailModalOpen(false)} className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmDiscardModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[18px] font-bold text-gray-900 mb-2">¿Descartar progreso?</h3>
+            <p className="text-[14px] text-gray-600 mb-6">
+              Has completado <strong>{completedExercises.length} ejercicio(s)</strong>. Tu progreso está guardado automáticamente y será restaurado si vuelves a esta sesión.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={handleConfirmDiscard}
+                className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={() => setShowConfirmDiscardModal(false)}
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Continuar entrenando
+              </button>
             </div>
           </div>
         </div>
