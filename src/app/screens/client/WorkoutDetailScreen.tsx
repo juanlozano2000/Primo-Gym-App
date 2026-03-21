@@ -388,7 +388,7 @@ export function WorkoutDetailScreen({
             {completedExercises.length > 0 && (
               <button
                 onClick={handleSaveManually}
-                className="w-full px-4 py-3 bg-success/10 border border-success/30 rounded-xl text-success font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-success/20 transition-all active:scale-[0.98]"
+                className="mt-3 w-full px-4 py-3 bg-success/10 border border-success/30 rounded-xl text-success font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-success/20 transition-all active:scale-[0.98]"
               >
                 <Save className="w-4 h-4" />
                 Guardar progreso ({completedExercises.length} ejercicios)
