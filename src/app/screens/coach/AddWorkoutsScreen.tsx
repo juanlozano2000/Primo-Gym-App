@@ -32,6 +32,11 @@ export function AddWorkoutsScreen({ onBack, onContinue, planData }: AddWorkoutsS
       return;
     }
 
+    if (!editingId && workouts.length >= planData.daysPerWeek) {
+      toast.error(`Ya alcanzaste el máximo de ${planData.daysPerWeek} workouts para este plan`);
+      return;
+    }
+
     if (editingId) {
       // Editar workout existente
       setWorkouts(workouts.map(w => 
@@ -74,8 +79,8 @@ export function AddWorkoutsScreen({ onBack, onContinue, planData }: AddWorkoutsS
   };
 
   const handleContinue = () => {
-    if (workouts.length === 0) {
-      toast.error("Agregá al menos un workout al plan");
+    if (workouts.length !== planData.daysPerWeek) {
+      toast.error(`Debes crear exactamente ${planData.daysPerWeek} workouts para continuar`);
       return;
     }
 
@@ -83,6 +88,11 @@ export function AddWorkoutsScreen({ onBack, onContinue, planData }: AddWorkoutsS
   };
 
   const handleQuickAdd = (template: { name: string; desc: string }) => {
+    if (workouts.length >= planData.daysPerWeek) {
+      toast.error(`Ya alcanzaste el máximo de ${planData.daysPerWeek} workouts para este plan`);
+      return;
+    }
+
     const newWorkout: WorkoutData = {
       id: Date.now().toString(),
       name: template.name,
@@ -286,7 +296,7 @@ export function AddWorkoutsScreen({ onBack, onContinue, planData }: AddWorkoutsS
           size="large"
           fullWidth
           onClick={handleContinue}
-          disabled={workouts.length === 0}
+          disabled={workouts.length !== planData.daysPerWeek}
         >
           Continuar ({workouts.length} workouts)
         </CTAButton>
