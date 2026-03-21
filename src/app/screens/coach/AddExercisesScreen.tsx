@@ -310,9 +310,14 @@ export function AddExercisesScreen({
 
         {showAddForm && !showExerciseLibrary && (
           <div className="bg-white rounded-2xl p-4 border-2 border-primary space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h4 className="font-medium">{editingId ? "Editar ejercicio" : "Nuevo ejercicio"}</h4>
-              <button onClick={resetForm} className="text-gray-500 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors">✕</button>
+              <div className="flex items-center gap-2">
+                <CTAButton variant="primary" size="small" onClick={handleAddExercise}>
+                  {editingId ? "Guardar cambios" : "Agregar ejercicio"}
+                </CTAButton>
+                <button onClick={resetForm} className="text-gray-500 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors">✕</button>
+              </div>
             </div>
 
             {/* 🚨 Input mixto: Tipeo libre o ayuda de la librería */}
@@ -447,9 +452,6 @@ export function AddExercisesScreen({
               <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ej: Enfocarse en la técnica excéntrica" className="w-full h-11 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" />
             </div>
 
-            <CTAButton variant="primary" size="small" fullWidth onClick={handleAddExercise}>
-              {editingId ? "Guardar cambios" : "Agregar ejercicio"}
-            </CTAButton>
           </div>
         )}
 
