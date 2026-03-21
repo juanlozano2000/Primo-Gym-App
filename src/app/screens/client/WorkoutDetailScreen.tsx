@@ -15,6 +15,7 @@ interface WorkoutDetailScreenProps {
 type WorkoutProgress = {
   workoutId: string;
   currentExerciseIndex: number;
+  currentSet: number;
   completedExercises: string[];
   timestamp: number;
 };
@@ -33,6 +34,7 @@ export function WorkoutDetailScreen({
   const [isFinishing, setIsFinishing] = useState(false);
 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [currentSet, setCurrentSet] = useState(1);
   const [completedExercises, setCompletedExercises] = useState<string[]>([]);
   const [isResting, setIsResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
@@ -44,6 +46,7 @@ export function WorkoutDetailScreen({
   const [hasUnsavedProgress, setHasUnsavedProgress] = useState(false);
   const [showConfirmDiscardModal, setShowConfirmDiscardModal] = useState(false);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
+  const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const fetchWorkoutDetail = async () => {
@@ -62,6 +65,7 @@ export function WorkoutDetailScreen({
             // Solo restaurar si fue guardado hace menos de 12 horas
             if (Date.now() - progress.timestamp < 12 * 60 * 60 * 1000) {
               setCurrentExerciseIndex(progress.currentExerciseIndex);
+              setCurrentSet(progress.currentSet);
               setCompletedExercises(progress.completedExercises);
               toast.success("Progreso anterior restaurado ✓", { duration: 3000 });
             } else {
@@ -79,6 +83,26 @@ export function WorkoutDetailScreen({
     if (workoutId) fetchWorkoutDetail();
   }, [workoutId, session?.user?.id]);
 
+  // 🚨 Efecto: Limpiar interval al desmontar o cambiar de ejercicio
+  useEffect(() => {
+    return () => {
+      if (restIntervalRef.current) {
+        clearInterval(restIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // 🚨 Efecto: Resetear serie actual cuando cambias de ejercicio
+  useEffect(() => {
+    if (restIntervalRef.current) {
+      clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+    setCurrentSet(1);
+    setIsResting(false);
+    setRestTimer(0);
+  }, [currentExerciseIndex]);
+
   // 🚨 Efecto: Guardar progreso automáticamente
   useEffect(() => {
     if (!session?.user?.id || !workout) return;
@@ -87,13 +111,14 @@ export function WorkoutDetailScreen({
     const progress: WorkoutProgress = {
       workoutId,
       currentExerciseIndex,
+      currentSet,
       completedExercises,
       timestamp: Date.now(),
     };
 
     localStorage.setItem(progressKey, JSON.stringify(progress));
     setHasUnsavedProgress(false);
-  }, [currentExerciseIndex, completedExercises, workoutId, session?.user?.id, workout]);
+  }, [currentExerciseIndex, currentSet, completedExercises, workoutId, session?.user?.id, workout]);
 
   // 🚨 Efecto: Advertencia al refrescar si hay progreso
   useEffect(() => {
@@ -131,24 +156,44 @@ export function WorkoutDetailScreen({
   }
 
   const currentExercise = workout.exerciseList[currentExerciseIndex];
+  const totalSets = parseInt(currentExercise.sets);
+  const isLastSet = currentSet >= totalSets;
   const isLastExercise = currentExerciseIndex === workout.exerciseList.length - 1;
   const isExerciseCompleted = completedExercises.includes(currentExercise.id);
   const hasSeriesData = currentExercise.seriesData && currentExercise.seriesData.length > 0;
 
-  const handleMarkAsDone = () => {
-    if (!isExerciseCompleted) {
+  const handleNextSet = () => {
+    if (isLastSet) {
+      // Última serie: marcar ejercicio completo
       setCompletedExercises([...completedExercises, currentExercise.id]);
       setHasUnsavedProgress(true);
-      toast.success("Ejercicio completado");
+      toast.success("¡Ejercicio completado!");
+      setCurrentSet(1); // Reset para el siguiente ejercicio
+      setRestTimer(0);
+      setIsResting(false);
+    } else {
+      // No es la última serie: avanzar a la siguiente
+      setCurrentSet(currentSet + 1);
+      setHasUnsavedProgress(true);
+      toast.success(`Serie ${currentSet} completada`);
       
+      // Limpiar interval anterior si existe
+      if (restIntervalRef.current) {
+        clearInterval(restIntervalRef.current);
+      }
+      
+      // Iniciar descanso
       const restSeconds = parseInt(currentExercise.rest) || 60;
       setRestTimer(restSeconds);
       setIsResting(true);
       
-      const interval = setInterval(() => {
+      restIntervalRef.current = setInterval(() => {
         setRestTimer((prev) => {
           if (prev <= 1) {
-            clearInterval(interval);
+            if (restIntervalRef.current) {
+              clearInterval(restIntervalRef.current);
+              restIntervalRef.current = null;
+            }
             setIsResting(false);
             return 0;
           }
@@ -160,6 +205,10 @@ export function WorkoutDetailScreen({
 
   const handleNext = () => {
     if (!isLastExercise) {
+      if (restIntervalRef.current) {
+        clearInterval(restIntervalRef.current);
+        restIntervalRef.current = null;
+      }
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       setHasUnsavedProgress(true);
       setIsResting(false);
@@ -168,6 +217,10 @@ export function WorkoutDetailScreen({
 
   const handlePrevious = () => {
     if (currentExerciseIndex > 0) {
+      if (restIntervalRef.current) {
+        clearInterval(restIntervalRef.current);
+        restIntervalRef.current = null;
+      }
       setCurrentExerciseIndex(currentExerciseIndex - 1);
       setHasUnsavedProgress(true);
       setIsResting(false);
@@ -221,6 +274,7 @@ export function WorkoutDetailScreen({
       const progress: WorkoutProgress = {
         workoutId,
         currentExerciseIndex,
+        currentSet,
         completedExercises,
         timestamp: Date.now(),
       };
@@ -259,6 +313,27 @@ export function WorkoutDetailScreen({
             </div>
 
             <h2 className="mb-6">{currentExercise.name}</h2>
+
+            {!isExerciseCompleted && (
+              <div className="mb-6 p-4 bg-primary/5 rounded-xl border border-primary/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[13px] text-gray-700 font-medium">
+                    Serie actual
+                  </span>
+                  <span className="text-[15px] font-bold text-primary">
+                    {currentSet} de {totalSets}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{
+                      width: `${((currentSet - 1) / totalSets) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
@@ -299,11 +374,16 @@ export function WorkoutDetailScreen({
               variant={isExerciseCompleted ? "secondary" : "primary"}
               size="large"
               fullWidth
-              onClick={handleMarkAsDone}
+              onClick={handleNextSet}
               disabled={isExerciseCompleted}
               icon={isExerciseCompleted ? CheckCircle2 : Circle}
             >
-              {isExerciseCompleted ? "Ejercicio completado" : "Marcar como hecho"}
+              {isExerciseCompleted 
+                ? "Ejercicio completado" 
+                : isLastSet 
+                ? "Marcar como hecho" 
+                : `Siguiente serie (${currentSet}/${totalSets})`
+              }
             </CTAButton>
             {completedExercises.length > 0 && (
               <button
