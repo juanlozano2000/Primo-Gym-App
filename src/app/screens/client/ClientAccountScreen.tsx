@@ -17,6 +17,7 @@ export function ClientAccountScreen() {
   const [personalRecords, setPersonalRecords] = useState<any[]>([]);
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseWeight, setExerciseWeight] = useState("");
+  const [exerciseReps, setExerciseReps] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
   // 🚨 Estados reales para datos
@@ -78,20 +79,33 @@ export function ClientAccountScreen() {
   };
 
   const handleAddPR = () => {
-    if (!exerciseName.trim() || !exerciseWeight.trim()) {
+    if (!exerciseName.trim() || !exerciseWeight.trim() || !exerciseReps.trim()) {
       toast.error("Completá todos los campos");
       return;
     }
 
     const weight = parseFloat(exerciseWeight);
+    const reps = parseInt(exerciseReps, 10);
+
     if (isNaN(weight) || weight <= 0) {
       toast.error("Ingresá un peso válido");
       return;
     }
 
+    if (isNaN(reps) || reps <= 0) {
+      toast.error("Ingresá repeticiones válidas");
+      return;
+    }
+
+    const oneRM = weight * (1 + reps / 30);
+    const roundedOneRM = Math.round(oneRM * 10) / 10;
+
     const newPR = {
       exercise: exerciseName.trim(),
-      value: `${weight}kg`,
+      weight,
+      reps,
+      oneRM: roundedOneRM,
+      value: `${roundedOneRM}kg`,
       date: new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }),
     };
 
@@ -102,6 +116,7 @@ export function ClientAccountScreen() {
     toast.success("Récord agregado correctamente");
     setExerciseName("");
     setExerciseWeight("");
+    setExerciseReps("");
     setIsAddPRModalOpen(false);
   };
 
@@ -183,7 +198,12 @@ export function ClientAccountScreen() {
                   <div key={index} className="flex items-center justify-between py-2 group border-b border-gray-50 last:border-0">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900 text-[15px]">{pr.exercise}</p>
-                      <p className="text-[12px] text-gray-500">{pr.date}</p>
+                      <p className="text-[12px] text-gray-500">
+                        {pr.weight && pr.reps ? `${pr.weight} kg x ${pr.reps} reps` : pr.date}
+                      </p>
+                      {pr.weight && pr.reps && (
+                        <p className="text-[11px] text-gray-400">{pr.date}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-[18px] font-bold text-primary">{pr.value}</span>
@@ -249,11 +269,28 @@ export function ClientAccountScreen() {
                 <input type="text" placeholder="Ej: Press de banca" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} className="w-full h-12 px-4 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]" autoFocus />
               </div>
               <div>
-                <label className="block text-[14px] font-medium text-gray-700 mb-2">Peso máximo (1RM)</label>
+                <label className="block text-[14px] font-medium text-gray-700 mb-2">Peso levantado</label>
                 <div className="relative">
                   <input type="number" placeholder="80" value={exerciseWeight} onChange={(e) => setExerciseWeight(e.target.value)} className="w-full h-12 px-4 pr-12 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]" step="0.5" min="0" />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-[15px] font-medium">kg</span>
                 </div>
+              </div>
+              <div>
+                <label className="block text-[14px] font-medium text-gray-700 mb-2">Repeticiones</label>
+                <input
+                  type="number"
+                  placeholder="8"
+                  value={exerciseReps}
+                  onChange={(e) => setExerciseReps(e.target.value)}
+                  className="w-full h-12 px-4 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]"
+                  min="1"
+                  step="1"
+                />
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 border border-border">
+                <p className="text-[12px] text-gray-600">
+                  1RM estimado con Epley: <strong>1RM = Peso x (1 + Repeticiones / 30)</strong>
+                </p>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-border flex gap-3">
