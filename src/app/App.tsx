@@ -17,6 +17,8 @@ import { ClientHomeScreen } from "./screens/client/ClientHomeScreen";
 import { ClientWorkoutsScreen } from "./screens/client/ClientWorkoutsScreen";
 import { WorkoutDetailScreen } from "./screens/client/WorkoutDetailScreen";
 import { ClientAccountScreen } from "./screens/client/ClientAccountScreen";
+import { AddMetricsScreen } from "./screens/client/AddMetricsScreen";
+import { AddPersonalRecordScreen } from "./screens/client/AddPersonalRecordScreen";
 
 // Screens - Coach
 import { CoachHomeScreen } from "./screens/coach/CoachHomeScreen";
@@ -37,7 +39,9 @@ type ClientScreen =
   | { type: "home" }
   | { type: "workouts" }
   | { type: "workout-detail"; workoutId: string }
-  | { type: "account" };
+  | { type: "account" }
+  | { type: "add-metrics" }
+  | { type: "add-personal-record" };
 
 type CoachScreen =
   | { type: "home" }
@@ -73,7 +77,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isClientScreen = (value: unknown): value is ClientScreen => {
   if (!isObject(value) || typeof value.type !== "string") return false;
 
-  if (value.type === "home" || value.type === "workouts" || value.type === "account") {
+  if (
+    value.type === "home" ||
+    value.type === "workouts" ||
+    value.type === "account" ||
+    value.type === "add-metrics" ||
+    value.type === "add-personal-record"
+  ) {
     return true;
   }
 
@@ -130,6 +140,7 @@ function AppContent() {
   // Client state
   const [clientTab, setClientTab] = useState<ClientTab>("home");
   const [clientScreen, setClientScreen] = useState<ClientScreen>({ type: "home" });
+  const [accountVersion, setAccountVersion] = useState(0);
   
   // Coach state
   const [coachTab, setCoachTab] = useState<CoachTab>("home");
@@ -223,6 +234,29 @@ function AppContent() {
   const navigateToMetrics = () => {
     setClientTab("account");
     setClientScreen({ type: "account" });
+  };
+
+  const navigateToAddMetrics = () => {
+    setClientScreen({ type: "add-metrics" });
+  };
+
+  const navigateToAddPersonalRecord = () => {
+    setClientScreen({ type: "add-personal-record" });
+  };
+
+  const navigateBackToAccount = () => {
+    setClientTab("account");
+    setClientScreen({ type: "account" });
+  };
+
+  const handleMetricsSaved = () => {
+    setAccountVersion((prev) => prev + 1);
+    navigateBackToAccount();
+  };
+
+  const handlePersonalRecordSaved = () => {
+    setAccountVersion((prev) => prev + 1);
+    navigateBackToAccount();
   };
 
   // Handlers para Entrenador
@@ -345,7 +379,27 @@ function AppContent() {
           />
         )}
         
-        {clientScreen.type === "account" && <ClientAccountScreen />}
+        {clientScreen.type === "account" && (
+          <ClientAccountScreen
+            key={accountVersion}
+            onNavigateToAddMetrics={navigateToAddMetrics}
+            onNavigateToAddPersonalRecord={navigateToAddPersonalRecord}
+          />
+        )}
+
+        {clientScreen.type === "add-metrics" && (
+          <AddMetricsScreen
+            onBack={navigateBackToAccount}
+            onSaved={handleMetricsSaved}
+          />
+        )}
+
+        {clientScreen.type === "add-personal-record" && (
+          <AddPersonalRecordScreen
+            onBack={navigateBackToAccount}
+            onSaved={handlePersonalRecordSaved}
+          />
+        )}
 
         {(clientScreen.type === "home" ||
           clientScreen.type === "workouts" ||
