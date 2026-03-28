@@ -6,18 +6,19 @@ import { PremiumBanner } from "../../components/PremiumBanner";
 import { Weight, Ruler, Activity, TrendingDown, User, LogOut, Settings, Plus, X, Trash2, MessageCircle, Star } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { clientService } from "../../services/clientService"; // 🚨 Servicio
+import { clientService } from "../../services/clientService";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
-export function ClientAccountScreen() {
+interface ClientAccountScreenProps {
+  onNavigateToAddMetrics: () => void;
+  onNavigateToAddPersonalRecord: () => void;
+}
+
+export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPersonalRecord }: ClientAccountScreenProps) {
   const { user, logout, session } = useAuth();
   
-  const [isAddPRModalOpen, setIsAddPRModalOpen] = useState(false);
   const [personalRecords, setPersonalRecords] = useState<any[]>([]);
-  const [exerciseName, setExerciseName] = useState("");
-  const [exerciseWeight, setExerciseWeight] = useState("");
-  const [exerciseReps, setExerciseReps] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
   // 🚨 Estados reales para datos
@@ -34,38 +35,37 @@ export function ClientAccountScreen() {
     }
   }, []);
 
+  const fetchAccountData = useCallback(async () => {
+    if (!session?.user?.id) return;
+    setIsLoading(true);
+
+    try {
+      // Nombre del perfil
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, plan_type")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profile) {
+        setFullName(profile.full_name);
+        setIsPremium(profile.plan_type === "premium");
+      }
+
+      // Métricas y Coach
+      const data = await clientService.getClientAccountData(session.user.id);
+      setAccountData(data);
+    } catch (error) {
+      console.error("Error al cargar la cuenta:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [session]);
+
   // Cargar datos reales
   useEffect(() => {
-    const fetchAccountData = async () => {
-      if (!session?.user?.id) return;
-      setIsLoading(true);
-
-      try {
-        // Nombre del perfil
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name, plan_type")
-          .eq("id", session.user.id)
-          .single();
-
-        if (profile) {
-          setFullName(profile.full_name);
-          setIsPremium(profile.plan_type === "premium");
-        }
-
-        // Métricas y Coach
-        const data = await clientService.getClientAccountData(session.user.id);
-        setAccountData(data);
-
-      } catch (error) {
-        console.error("Error al cargar la cuenta:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchAccountData();
-  }, [session]);
+  }, [fetchAccountData]);
 
   const handleUpgradeClick = () => setIsUpgradeModalOpen(true);
 
@@ -76,48 +76,6 @@ export function ClientAccountScreen() {
     );
     const phoneNumber = "5491138756897"; 
     window.open(`https://wa.me/${phoneNumber}?text=${message}`, "_blank");
-  };
-
-  const handleAddPR = () => {
-    if (!exerciseName.trim() || !exerciseWeight.trim() || !exerciseReps.trim()) {
-      toast.error("Completá todos los campos");
-      return;
-    }
-
-    const weight = parseFloat(exerciseWeight);
-    const reps = parseInt(exerciseReps, 10);
-
-    if (isNaN(weight) || weight <= 0) {
-      toast.error("Ingresá un peso válido");
-      return;
-    }
-
-    if (isNaN(reps) || reps <= 0) {
-      toast.error("Ingresá repeticiones válidas");
-      return;
-    }
-
-    const oneRM = weight * (1 + reps / 30);
-    const roundedOneRM = Math.round(oneRM * 10) / 10;
-
-    const newPR = {
-      exercise: exerciseName.trim(),
-      weight,
-      reps,
-      oneRM: roundedOneRM,
-      value: `${roundedOneRM}kg`,
-      date: new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }),
-    };
-
-    const updatedPRs = [...personalRecords, newPR];
-    setPersonalRecords(updatedPRs);
-    localStorage.setItem("personalRecords", JSON.stringify(updatedPRs));
-
-    toast.success("Récord agregado correctamente");
-    setExerciseName("");
-    setExerciseWeight("");
-    setExerciseReps("");
-    setIsAddPRModalOpen(false);
   };
 
   const handleDeletePR = (index: number) => {
@@ -163,7 +121,15 @@ export function ClientAccountScreen() {
 
         {/* Insights - Métricas */}
         <div>
-          <h3 className="mb-3 text-gray-900">Mis métricas</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-gray-900">Mis métricas</h3>
+            <button
+              onClick={onNavigateToAddMetrics}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
           {isLoading || !accountData ? (
             <div className="grid grid-cols-2 gap-3 animate-pulse">
               <div className="h-24 bg-white rounded-2xl border border-border"></div>
@@ -185,7 +151,7 @@ export function ClientAccountScreen() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-gray-900">Records personales</h3>
-            <button onClick={() => setIsAddPRModalOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors active:scale-95">
+            <button onClick={onNavigateToAddPersonalRecord} className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors active:scale-95">
               <Plus className="w-5 h-5" />
             </button>
           </div>
@@ -252,54 +218,6 @@ export function ClientAccountScreen() {
 
         <CTAButton variant="outline" fullWidth icon={LogOut} onClick={handleLogout}>Cerrar sesión</CTAButton>
       </div>
-
-      {/* Modales mantenidos igual, omito el código de los modales para no saturar, pero dejalos tal cual los tenías al final del archivo */}
-      {isAddPRModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setIsAddPRModalOpen(false)}>
-          <div className="bg-white rounded-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-              <h3 className="font-semibold">Agregar récord personal</h3>
-              <button onClick={() => setIsAddPRModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-[14px] font-medium text-gray-700 mb-2">Ejercicio</label>
-                <input type="text" placeholder="Ej: Press de banca" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} className="w-full h-12 px-4 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]" autoFocus />
-              </div>
-              <div>
-                <label className="block text-[14px] font-medium text-gray-700 mb-2">Peso levantado</label>
-                <div className="relative">
-                  <input type="number" placeholder="80" value={exerciseWeight} onChange={(e) => setExerciseWeight(e.target.value)} className="w-full h-12 px-4 pr-12 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]" step="0.5" min="0" />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-[15px] font-medium">kg</span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[14px] font-medium text-gray-700 mb-2">Repeticiones</label>
-                <input
-                  type="number"
-                  placeholder="8"
-                  value={exerciseReps}
-                  onChange={(e) => setExerciseReps(e.target.value)}
-                  className="w-full h-12 px-4 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-[15px]"
-                  min="1"
-                  step="1"
-                />
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 border border-border">
-                <p className="text-[12px] text-gray-600">
-                  1RM estimado con Epley: <strong>1RM = Peso x (1 + Repeticiones / 30)</strong>
-                </p>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-border flex gap-3">
-              <button onClick={() => setIsAddPRModalOpen(false)} className="flex-1 h-12 rounded-xl border border-border font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancelar</button>
-              <button onClick={handleAddPR} className="flex-1 h-12 rounded-xl bg-primary text-white font-medium hover:bg-primary/90 transition-colors active:scale-[0.98]">Agregar</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {isUpgradeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setIsUpgradeModalOpen(false)}>

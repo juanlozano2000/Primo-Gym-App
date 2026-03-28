@@ -255,6 +255,38 @@ export const clientService = {
       return false;
     }
   },
+
+  // 6. Guardar una nueva entrada de métricas corporales
+  async addBodyMetrics(
+    clientId: string,
+    metrics: { weightKg?: number; heightCm?: number; bodyFatPct?: number }
+  ) {
+    try {
+      const payload: {
+        client_id: string;
+        date: string;
+        weight_kg?: number;
+        height_cm?: number;
+        body_fat_pct?: number;
+      } = {
+        client_id: clientId,
+        date: new Date().toISOString().split("T")[0],
+      };
+
+      if (typeof metrics.weightKg === "number") payload.weight_kg = metrics.weightKg;
+      if (typeof metrics.heightCm === "number") payload.height_cm = metrics.heightCm;
+      if (typeof metrics.bodyFatPct === "number") payload.body_fat_pct = metrics.bodyFatPct;
+
+      const { error } = await supabase.from("body_metrics").insert(payload);
+      if (error) throw error;
+
+      return true;
+    } catch (error) {
+      console.error("Error saving body metrics:", error);
+      return false;
+    }
+  },
+
   // 6. Obtener los datos completos para la pantalla "Mi Cuenta" del Cliente
   async getClientAccountData(clientId: string) {
     try {
