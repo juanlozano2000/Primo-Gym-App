@@ -1,6 +1,6 @@
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown, Trash2, CalendarCheck } from "lucide-react";
+import { Edit, TrendingUp, CheckCircle, Calendar, Loader2, Crown, Trash2, CalendarCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { dashboardService } from "../../services/dashboardService";
@@ -115,11 +115,29 @@ export function ClientDetailScreen({
     );
   }
 
+  const hasClientSuggestions = Boolean(client.hasPendingSuggestions);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <AppBar title={client.name} onBack={onBack} />
 
       <div className="px-4 py-6 space-y-6">
+        {hasClientSuggestions && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-amber-900 mb-1">El cliente realizó sugerencias en la rutina</h4>
+                <p className="text-[13px] text-amber-800 leading-relaxed">
+                  Revisá la actividad reciente y el plan asignado para ver los cambios sugeridos en peso, repeticiones o técnica.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Perfil del cliente */}
         <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
           <div className="flex items-center gap-4 mb-4">
@@ -295,10 +313,20 @@ export function ClientDetailScreen({
                         month: "long"
                       })}
                     </p>
+                    {workout.hasClientEdits && (
+                      <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        Editado por el cliente
+                      </span>
+                    )}
+                    {workout.notes && (
+                      <p className="text-[12px] text-gray-500 mt-1">
+                        {workout.notes}
+                      </p>
+                    )}
                   </div>
-                  {workout.completed && (
-                    <CheckCircle className="w-5 h-5 text-success bg-success/10 rounded-full p-0.5" />
-                  )}
+                  <div className={`px-2 py-1 rounded-md text-[12px] font-medium ${workout.completed ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+                    {workout.completed ? "Completo" : "Incompleto"}
+                  </div>
                 </div>
               ))}
             </div>

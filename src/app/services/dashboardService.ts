@@ -23,6 +23,54 @@ export interface DashboardData {
   allClients: DashboardClient[];
 }
 
+const normalizeSuggestionText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const buildSuggestionKey = (workoutId: string, suggestion: string) => {
+  const raw = `${workoutId}|${normalizeSuggestionText(suggestion).replace(/\s+/g, ' ')}`;
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+};
+
+const parseClientSuggestions = (notes: string | null | undefined) => {
+  if (!notes) return [];
+  const marker = 'ajustes del cliente:';
+  const lowerNotes = notes.toLowerCase();
+  const markerIndex = lowerNotes.indexOf(marker);
+  if (markerIndex === -1) return [];
+
+  return notes
+    .slice(markerIndex + marker.length)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.toLowerCase().startsWith('workout '))
+    .filter((line) => !line.startsWith('['))
+    .filter((line) => !line.toLowerCase().startsWith('sugerencia aplicada por coach'))
+    .filter((line) => !line.toLowerCase().startsWith('sugerencia rechazada por coach'))
+    .filter((line) => /:\s*serie\s*\d+/i.test(line));
+};
+
+const parseResolvedSuggestionKeys = (feedback: string | null | undefined) => {
+  if (!feedback) return new Set<string>();
+
+  const regex = /\[SUGGESTION_STATUS\]\[(?:ACCEPTED|REJECTED)\]\[key:([a-z0-9]+)\]/gi;
+  const resolved = new Set<string>();
+  let match: RegExpExecArray | null = regex.exec(feedback);
+  while (match) {
+    resolved.add(match[1]);
+    match = regex.exec(feedback);
+  }
+  return resolved;
+};
+
 export const dashboardService = {
   // Función 1: Devuelve todo el paquete de datos del dashboard listo para usar
   async getCoachDashboardData(coachId: string): Promise<DashboardData> {
@@ -49,7 +97,7 @@ export const dashboardService = {
       if (clientIds.length > 0) {
         const { data: sData } = await supabase
           .from('workout_sessions')
-          .select('client_id, ended_at')
+          .select('client_id, ended_at, notes')
           .in('client_id', clientIds)
           .not('ended_at', 'is', null)
           .order('ended_at', { ascending: false });
@@ -63,7 +111,7 @@ export const dashboardService = {
       if (clientIds.length > 0) {
         const { data: apData } = await supabase
           .from('assigned_plans')
-          .select('client_id, is_completed')
+          .select('id, client_id, workout_id, is_completed, client_feedback')
           .in('client_id', clientIds)
           .lte('scheduled_date', todayStr);
         assignedPlansData = apData || [];
@@ -78,6 +126,7 @@ export const dashboardService = {
         // Atajamos el perfil por si viene como array u objeto
         const profileData = Array.isArray(relation.profiles) ? relation.profiles[0] : relation.profiles;
         const clientId = relation.client_id;
+        const clientName = profileData?.full_name || "Cliente";
         
         const clientSessions = sessionsData.filter(s => s.client_id === clientId);
         const lastSession = clientSessions[0]; 
@@ -113,6 +162,26 @@ export const dashboardService = {
         } else {
           hasAlert = true;
           alertMessage = "Sin registros recientes";
+        }
+
+        const clientPendingSuggestions = assignedPlansData
+          .filter((plan) => plan.client_id === clientId)
+          .reduce((total, plan) => {
+            const suggestions = parseClientSuggestions(plan.client_feedback);
+            const resolvedKeys = parseResolvedSuggestionKeys(plan.client_feedback);
+            const unresolvedCount = suggestions.filter((suggestion) => {
+              const key = buildSuggestionKey(plan.workout_id || '', suggestion);
+              return !resolvedKeys.has(key);
+            }).length;
+            return total + unresolvedCount;
+          }, 0);
+
+        if (clientPendingSuggestions > 0) {
+          hasAlert = true;
+          const suggestionMessage = `El cliente ${clientName} tiene ${clientPendingSuggestions} sugerencia${clientPendingSuggestions > 1 ? 's' : ''} pendiente${clientPendingSuggestions > 1 ? 's' : ''}`;
+          alertMessage = alertMessage
+            ? `${alertMessage} · ${suggestionMessage}`
+            : suggestionMessage;
         }
 
         const rawPlan = profileData?.plan_type || 'basic';
@@ -203,17 +272,17 @@ async getClientDetail(clientId: string) {
       // 🚨 RELACIONES EXPLÍCITAS para evitar el error PGRST201
       const { data: assignedData } = await supabase
         .from('assigned_plans')
-        .select('id, workout_id, scheduled_date, is_completed, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
+        .select('id, workout_id, scheduled_date, is_completed, client_feedback, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
         .eq('client_id', clientId)
         .order('scheduled_date', { ascending: false });
 
       const { data: sessionsData } = await supabase
         .from('workout_sessions')
-        .select('id, ended_at, workouts!workout_sessions_workout_id_fkey(title)')
+        .select('id, ended_at, notes, workouts!workout_sessions_workout_id_fkey(title)')
         .eq('client_id', clientId)
         .not('ended_at', 'is', null)
         .order('ended_at', { ascending: false })
-        .limit(3);
+        .limit(10);
 
       const weights = metricsData?.map(m => m.weight_kg).filter(Boolean) || [];
       const fats = metricsData?.map(m => m.body_fat_pct).filter(Boolean) || [];
@@ -232,6 +301,13 @@ async getClientDetail(clientId: string) {
         const durationWeeks = workoutData?.duration_weeks ?? 1;
         const endDate = new Date(ap.scheduled_date);
         endDate.setDate(endDate.getDate() + durationWeeks * 7);
+        const suggestions = parseClientSuggestions(ap.client_feedback);
+        const resolvedKeys = parseResolvedSuggestionKeys(ap.client_feedback);
+        const pendingSuggestions = suggestions.filter((suggestion) => {
+          const key = buildSuggestionKey(ap.workout_id || '', suggestion);
+          return !resolvedKeys.has(key);
+        }).length;
+
         return {
           id: ap.id,
           workoutId: ap.workout_id,
@@ -240,14 +316,23 @@ async getClientDetail(clientId: string) {
           endDate: endDate.toISOString().split('T')[0],
           isCompleted: ap.is_completed,
           duration: `${estimatedMinutes} min`,
+          clientFeedback: ap.client_feedback || null,
+          pendingSuggestions,
         };
       }) || [];
 
-      const recentWorkouts = sessionsData?.map((ws: any) => ({
-        name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
-        date: ws.ended_at,
-        completed: true
-      })) || [];
+      const recentWorkouts = sessionsData?.map((ws: any) => {
+        const notesText = ws.notes || "";
+        const normalizedNotes = notesText.toLowerCase();
+
+        return {
+          name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
+          date: ws.ended_at,
+          completed: !normalizedNotes.includes("incompleta"),
+          hasClientEdits: normalizedNotes.includes("ajustes del cliente"),
+          notes: notesText || null
+        };
+      }) || [];
 
       // Adherencia = asistencia: solo contamos las rutinas cuya fecha ya pasó
       const todayForAdherence = new Date().toISOString().split('T')[0];
@@ -264,6 +349,7 @@ async getClientDetail(clientId: string) {
         adherence,
         metrics,
         assignedPlans,
+        hasPendingSuggestions: assignedPlans.some((plan: any) => (plan.pendingSuggestions || 0) > 0),
         recentWorkouts
       };
     } catch (error) {

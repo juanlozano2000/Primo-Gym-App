@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { CheckCircle2, Circle, Clock, Eye, List, Loader2, Save } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Eye, List, Loader2, Pencil, Save } from "lucide-react";
 import { toast } from "sonner";
 import { ExercisePreviewModal } from "../../components/ExercisePreviewModal";
 import { useAuth } from "../../context/AuthContext";
@@ -15,9 +15,22 @@ interface WorkoutDetailScreenProps {
 type WorkoutProgress = {
   workoutId: string;
   currentExerciseIndex: number;
-  currentSet: number;
+  exerciseProgressById: Record<string, ExerciseProgress>;
+  seriesEditsByExerciseId: Record<string, SeriesEdit[]>;
   completedExercises: string[];
   timestamp: number;
+};
+
+type ExerciseProgress = {
+  completedSets: number;
+  isCompleted: boolean;
+};
+
+type SeriesEdit = {
+  reps: string;
+  weight: string;
+  rir: string;
+  notes: string;
 };
 
 const WORKOUT_PROGRESS_PREFIX = "spoter_workout_progress_";
@@ -34,17 +47,21 @@ export function WorkoutDetailScreen({
   const [isFinishing, setIsFinishing] = useState(false);
 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [currentSet, setCurrentSet] = useState(1);
-  const [completedExercises, setCompletedExercises] = useState<string[]>([]);
+  const [exerciseProgressById, setExerciseProgressById] = useState<Record<string, ExerciseProgress>>({});
+  const [seriesEditsByExerciseId, setSeriesEditsByExerciseId] = useState<Record<string, SeriesEdit[]>>({});
   const [isResting, setIsResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewExercise, setPreviewExercise] = useState<any>(null);
   const [isSeriesDetailModalOpen, setIsSeriesDetailModalOpen] = useState(false);
+  const [isSeriesEditModalOpen, setIsSeriesEditModalOpen] = useState(false);
+  const [editingExercise, setEditingExercise] = useState<any>(null);
+  const [editingSeriesDraft, setEditingSeriesDraft] = useState<SeriesEdit[]>([]);
   
   // 🚨 Nuevos estados para persistencia
   const [hasUnsavedProgress, setHasUnsavedProgress] = useState(false);
   const [showConfirmDiscardModal, setShowConfirmDiscardModal] = useState(false);
+  const [showConfirmIncompleteFinishModal, setShowConfirmIncompleteFinishModal] = useState(false);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -65,8 +82,33 @@ export function WorkoutDetailScreen({
             // Solo restaurar si fue guardado hace menos de 12 horas
             if (Date.now() - progress.timestamp < 12 * 60 * 60 * 1000) {
               setCurrentExerciseIndex(progress.currentExerciseIndex);
-              setCurrentSet(progress.currentSet);
-              setCompletedExercises(progress.completedExercises);
+              if (progress.exerciseProgressById) {
+                setExerciseProgressById(progress.exerciseProgressById);
+              } else {
+                const fallbackProgress: Record<string, ExerciseProgress> = {};
+                if (Array.isArray(progress.completedExercises)) {
+                  progress.completedExercises.forEach((exerciseId: string) => {
+                    fallbackProgress[exerciseId] = {
+                      completedSets: 1,
+                      isCompleted: true,
+                    };
+                  });
+                }
+
+                const currentExercise = data?.exerciseList?.[progress.currentExerciseIndex];
+                if (currentExercise && typeof (progress as any).currentSet === "number") {
+                  fallbackProgress[currentExercise.id] = {
+                    completedSets: Math.max(0, (progress as any).currentSet - 1),
+                    isCompleted: false,
+                  };
+                }
+
+                setExerciseProgressById(fallbackProgress);
+              }
+
+              if (progress.seriesEditsByExerciseId) {
+                setSeriesEditsByExerciseId(progress.seriesEditsByExerciseId);
+              }
               toast.success("Progreso anterior restaurado ✓", { duration: 3000 });
             } else {
               localStorage.removeItem(progressKey);
@@ -98,7 +140,6 @@ export function WorkoutDetailScreen({
       clearInterval(restIntervalRef.current);
       restIntervalRef.current = null;
     }
-    setCurrentSet(1);
     setIsResting(false);
     setRestTimer(0);
   }, [currentExerciseIndex]);
@@ -108,17 +149,21 @@ export function WorkoutDetailScreen({
     if (!session?.user?.id || !workout) return;
 
     const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+    const completedExercises = Object.entries(exerciseProgressById)
+      .filter(([, progress]) => progress.isCompleted)
+      .map(([exerciseId]) => exerciseId);
     const progress: WorkoutProgress = {
       workoutId,
       currentExerciseIndex,
-      currentSet,
+      exerciseProgressById,
+      seriesEditsByExerciseId,
       completedExercises,
       timestamp: Date.now(),
     };
 
     localStorage.setItem(progressKey, JSON.stringify(progress));
     setHasUnsavedProgress(false);
-  }, [currentExerciseIndex, currentSet, completedExercises, workoutId, session?.user?.id, workout]);
+  }, [currentExerciseIndex, exerciseProgressById, seriesEditsByExerciseId, workoutId, session?.user?.id, workout]);
 
   // 🚨 Efecto: Advertencia al refrescar si hay progreso
   useEffect(() => {
@@ -156,24 +201,143 @@ export function WorkoutDetailScreen({
   }
 
   const currentExercise = workout.exerciseList[currentExerciseIndex];
-  const totalSets = parseInt(currentExercise.sets);
+  const totalSets = Math.max(1, parseInt(currentExercise.sets, 10) || 0);
+  const currentExerciseProgress = exerciseProgressById[currentExercise.id] || {
+    completedSets: 0,
+    isCompleted: false,
+  };
+  const currentExerciseSeriesEdits = seriesEditsByExerciseId[currentExercise.id];
+  const completedExercises = Object.entries(exerciseProgressById)
+    .filter(([, progress]) => progress.isCompleted)
+    .map(([exerciseId]) => exerciseId);
+  const hasAnyProgress = completedExercises.length > 0 || Object.values(exerciseProgressById).some((progress) => progress.completedSets > 0);
+  const completedSets = currentExerciseProgress.isCompleted
+    ? totalSets
+    : Math.min(currentExerciseProgress.completedSets, totalSets);
+  const currentSet = Math.min(completedSets + 1, totalSets);
   const isLastSet = currentSet >= totalSets;
   const isLastExercise = currentExerciseIndex === workout.exerciseList.length - 1;
-  const isExerciseCompleted = completedExercises.includes(currentExercise.id);
+  const isExerciseCompleted = currentExerciseProgress.isCompleted;
   const hasSeriesData = currentExercise.seriesData && currentExercise.seriesData.length > 0;
+  const currentExerciseSeriesData = currentExerciseSeriesEdits || currentExercise.seriesData;
+
+  const openSeriesEditModal = (exercise: any) => {
+    const totalSeries = Math.max(1, Number(exercise.sets) || exercise.seriesData?.length || 0);
+    const existingEdits = seriesEditsByExerciseId[exercise.id] || [];
+    const draft = Array.from({ length: totalSeries }, (_, index) => {
+      const baseSerie = exercise.seriesData?.[index] || {};
+      const existingSerie = existingEdits[index] || {};
+
+      return {
+        reps: existingSerie.reps ?? baseSerie.reps ?? "",
+        weight: existingSerie.weight ?? baseSerie.weight ?? "",
+        rir: existingSerie.rir ?? baseSerie.rir ?? "",
+        notes: existingSerie.notes ?? baseSerie.notes ?? "",
+      };
+    });
+
+    setEditingExercise(exercise);
+    setEditingSeriesDraft(draft);
+    setIsSeriesEditModalOpen(true);
+  };
+
+  const handleSeriesDraftChange = (index: number, field: keyof SeriesEdit, value: string) => {
+    setEditingSeriesDraft((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+    setHasUnsavedProgress(true);
+  };
+
+  const handleSaveSeriesEdits = () => {
+    if (!editingExercise) return;
+
+    const exerciseName = editingExercise.name;
+    const savedSeries = editingSeriesDraft;
+
+    setSeriesEditsByExerciseId((prev) => ({
+      ...prev,
+      [editingExercise.id]: savedSeries,
+    }));
+    setHasUnsavedProgress(true);
+    setIsSeriesEditModalOpen(false);
+    setEditingExercise(null);
+
+    if (session?.user?.id) {
+      const seriesSummary = savedSeries
+        .map((item, index) => {
+          const parts = [
+            item.reps ? `reps ${item.reps}` : null,
+            item.weight ? `peso ${item.weight}` : null,
+            item.rir ? `RIR ${item.rir}` : null,
+            item.notes ? `nota: ${item.notes}` : null,
+          ].filter(Boolean);
+
+          return parts.length > 0 ? `Serie ${index + 1} (${parts.join(", ")})` : null;
+        })
+        .filter(Boolean)
+        .join(" | ");
+
+      const suggestionNote = `Ajustes del cliente:\n${exerciseName}: ${seriesSummary || "Sin detalle"}`;
+      clientService.saveWorkoutSuggestion(session.user.id, workout.id, suggestionNote).catch(() => {
+        console.error("Error saving workout suggestion note");
+      });
+    }
+
+    toast.success("Detalles de serie actualizados");
+  };
+
+  const buildCoachNotes = (isIncompleteWorkout: boolean) => {
+    const editedExercises = Object.entries(seriesEditsByExerciseId)
+      .filter(([, series]) => series.some((item) => item.reps || item.weight || item.rir || item.notes))
+      .map(([exerciseId, series]) => {
+        const exercise = workout.exerciseList.find((item: any) => item.id === exerciseId);
+        const seriesSummary = series
+          .map((item, index) => {
+            const parts = [
+              item.reps ? `reps ${item.reps}` : null,
+              item.weight ? `peso ${item.weight}` : null,
+              item.rir ? `RIR ${item.rir}` : null,
+              item.notes ? `nota: ${item.notes}` : null,
+            ].filter(Boolean);
+
+            return parts.length > 0 ? `Serie ${index + 1} (${parts.join(", ")})` : null;
+          })
+          .filter(Boolean)
+          .join(" | ");
+
+        return `${exercise?.name || "Ejercicio"}: ${seriesSummary}`;
+      });
+
+    return editedExercises.length > 0 ? `Ajustes del cliente:\n${editedExercises.join("\n")}` : "";
+  };
 
   const handleNextSet = () => {
+    if (isExerciseCompleted) return;
+
     if (isLastSet) {
-      // Última serie: marcar ejercicio completo
-      setCompletedExercises([...completedExercises, currentExercise.id]);
+      // Última serie: marcar ejercicio completo sin perder el detalle de las series previas
+      setExerciseProgressById((prev) => ({
+        ...prev,
+        [currentExercise.id]: {
+          completedSets: totalSets,
+          isCompleted: true,
+        },
+      }));
       setHasUnsavedProgress(true);
       toast.success("¡Ejercicio completado!");
-      setCurrentSet(1); // Reset para el siguiente ejercicio
       setRestTimer(0);
       setIsResting(false);
     } else {
       // No es la última serie: avanzar a la siguiente
-      setCurrentSet(currentSet + 1);
+      setExerciseProgressById((prev) => ({
+        ...prev,
+        [currentExercise.id]: {
+          completedSets: currentSet,
+          isCompleted: false,
+        },
+      }));
       setHasUnsavedProgress(true);
       toast.success(`Serie ${currentSet} completada`);
       
@@ -228,17 +392,30 @@ export function WorkoutDetailScreen({
   };
 
   // 🚨 MAGIA: Registrar en la Base de Datos que terminamos
-  const handleFinishWorkout = async () => {
+  const handleFinishWorkout = async (isIncomplete: boolean = false) => {
     if (!session?.user?.id) return;
     
     setIsFinishing(true);
     // Suponemos que cada ejercicio le tomó aprox 10 min
     const estimatedMinutes = workout.exerciseList.length * 10;
-    
-    const success = await clientService.finishWorkout(session.user.id, workout.id, estimatedMinutes);
+    const completedExercisesCount = completedExercises.length;
+    const totalExercises = workout.exerciseList.length;
+
+    const success = await clientService.finishWorkout(session.user.id, workout.id, {
+      durationMinutes: estimatedMinutes,
+      isIncomplete,
+      completedExercises: completedExercisesCount,
+      totalExercises,
+      notes: buildCoachNotes(isIncomplete),
+    });
     
     if (success) {
-      toast.success("¡Workout completado! Progreso guardado. 💪", { duration: 4000 });
+      toast.success(
+        isIncomplete
+          ? "Workout guardado como incompleto. El profesor podrá verlo."
+          : "¡Workout completado! Progreso guardado. 💪",
+        { duration: 4000 }
+      );
       // Limpiar progreso guardado al terminar
       if (session?.user?.id) {
         const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
@@ -252,8 +429,17 @@ export function WorkoutDetailScreen({
     }
   };
 
+  const handleFinishWorkoutPress = () => {
+    if (completedExercises.length < workout.exerciseList.length) {
+      setShowConfirmIncompleteFinishModal(true);
+      return;
+    }
+
+    handleFinishWorkout(false);
+  };
+
   const handleBackWithConfirmation = () => {
-    if (hasUnsavedProgress && completedExercises.length > 0) {
+    if (hasUnsavedProgress && hasAnyProgress) {
       pendingNavigationRef.current = onBack;
       setShowConfirmDiscardModal(true);
     } else {
@@ -271,15 +457,20 @@ export function WorkoutDetailScreen({
   const handleSaveManually = () => {
     if (session?.user?.id) {
       const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+      const completedExercises = Object.entries(exerciseProgressById)
+        .filter(([, progress]) => progress.isCompleted)
+        .map(([exerciseId]) => exerciseId);
       const progress: WorkoutProgress = {
         workoutId,
         currentExerciseIndex,
-        currentSet,
+        exerciseProgressById,
+        seriesEditsByExerciseId,
         completedExercises,
         timestamp: Date.now(),
       };
       localStorage.setItem(progressKey, JSON.stringify(progress));
       toast.success("Progreso guardado ✓", { duration: 2000 });
+      setHasUnsavedProgress(false);
     }
   };
 
@@ -341,7 +532,7 @@ export function WorkoutDetailScreen({
                 <p className="text-[20px] font-bold text-gray-900">{currentExercise.sets}</p>
               </div>
               <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[13px] text-gray-600 mb-1">Objetivo</p>
+                <p className="text-[13px] text-gray-600 mb-1">Reps</p>
                 <p className="text-[18px] font-bold text-gray-900 truncate px-1">
                   {currentExercise.seriesData?.[0]?.reps ? `${currentExercise.seriesData[0].reps} reps` : "-"}
                 </p>
@@ -385,13 +576,13 @@ export function WorkoutDetailScreen({
                 : `Siguiente serie (${currentSet}/${totalSets})`
               }
             </CTAButton>
-            {completedExercises.length > 0 && (
+            {hasAnyProgress && (
               <button
                 onClick={handleSaveManually}
                 className="mt-3 w-full px-4 py-3 bg-success/10 border border-success/30 rounded-xl text-success font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-success/20 transition-all active:scale-[0.98]"
               >
                 <Save className="w-4 h-4" />
-                Guardar progreso ({completedExercises.length} ejercicios)
+                Guardar progreso
               </button>
             )}          </div>
 
@@ -412,10 +603,14 @@ export function WorkoutDetailScreen({
               <CTAButton
                 variant="accent"
                 fullWidth
-                onClick={handleFinishWorkout}
-                disabled={completedExercises.length !== workout.exerciseList.length || isFinishing}
+                  onClick={handleFinishWorkoutPress}
+                  disabled={isFinishing}
               >
-                {isFinishing ? "Guardando..." : "Finalizar workout"}
+                  {isFinishing
+                    ? "Guardando..."
+                    : completedExercises.length !== workout.exerciseList.length
+                    ? "Finalizar incompleto"
+                    : "Finalizar workout"}
               </CTAButton>
             )}
           </div>
@@ -425,7 +620,9 @@ export function WorkoutDetailScreen({
           <h4 className="mb-3">Todos los ejercicios</h4>
           <div className="space-y-2">
             {workout.exerciseList.map((exercise: any, index: number) => {
-              const isDone = completedExercises.includes(exercise.id);
+              const exerciseProgress = exerciseProgressById[exercise.id];
+              const isDone = exerciseProgress?.isCompleted || false;
+              const completedSeries = Math.min(exerciseProgress?.completedSets || 0, Number(exercise.sets) || 0);
               const isCurrent = index === currentExerciseIndex;
               
               return (
@@ -449,23 +646,42 @@ export function WorkoutDetailScreen({
                       <div className="flex-1 min-w-0">
                         <p className="text-[15px] font-medium truncate">{exercise.name}</p>
                         <p className={`text-[13px] ${isCurrent ? "opacity-80" : "opacity-60"}`}>
-                          {exercise.sets} series
+                          {isDone
+                            ? `${exercise.sets} series completadas`
+                            : completedSeries > 0
+                            ? `${completedSeries}/${exercise.sets} series guardadas`
+                            : `${exercise.sets} series`}
                         </p>
                       </div>
                     </div>
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewExercise(exercise);
-                      setIsPreviewModalOpen(true);
-                    }}
-                    className={`absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                      isCurrent ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-200 hover:bg-accent/20 text-gray-700 hover:text-accent"
-                    }`}
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSeriesEditModal(exercise);
+                      }}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                        isCurrent ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-200 hover:bg-accent/20 text-gray-700 hover:text-accent"
+                      }`}
+                      aria-label="Editar serie"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewExercise(exercise);
+                        setIsPreviewModalOpen(true);
+                      }}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                        isCurrent ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-200 hover:bg-accent/20 text-gray-700 hover:text-accent"
+                      }`}
+                      aria-label="Ver detalle"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -482,6 +698,84 @@ export function WorkoutDetailScreen({
         notes={""}
       />
 
+      {isSeriesEditModalOpen && editingExercise && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-3xl sm:rounded-t-2xl flex items-center justify-between z-10">
+              <div>
+                <h3 className="font-semibold text-[16px]">Editar serie</h3>
+                <p className="text-[13px] text-gray-600">{editingExercise.name}</p>
+              </div>
+              <button onClick={() => setIsSeriesEditModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500">✕</button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[13px] text-amber-900">
+                Estos cambios no modifican la rutina original. Solo quedan guardados como notas para tu profesor.
+              </div>
+
+              {editingSeriesDraft.map((serie, index) => (
+                <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-[13px]">{index + 1}</div>
+                    <span className="text-[14px] font-medium text-gray-700">Serie {index + 1}</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label className="space-y-1">
+                      <span className="text-[12px] text-gray-600">Reps</span>
+                      <input
+                        value={serie.reps}
+                        onChange={(e) => handleSeriesDraftChange(index, "reps", e.target.value)}
+                        className="w-full h-11 rounded-xl border border-gray-200 bg-white px-3 text-[14px] outline-none focus:border-primary"
+                        placeholder="Ej: 12"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[12px] text-gray-600">Peso</span>
+                      <input
+                        value={serie.weight}
+                        onChange={(e) => handleSeriesDraftChange(index, "weight", e.target.value)}
+                        className="w-full h-11 rounded-xl border border-gray-200 bg-white px-3 text-[14px] outline-none focus:border-primary"
+                        placeholder="Ej: 20kg"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[12px] text-gray-600">RIR</span>
+                      <input
+                        value={serie.rir}
+                        onChange={(e) => handleSeriesDraftChange(index, "rir", e.target.value)}
+                        className="w-full h-11 rounded-xl border border-gray-200 bg-white px-3 text-[14px] outline-none focus:border-primary"
+                        placeholder="Ej: 2"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="space-y-1 block">
+                    <span className="text-[12px] text-gray-600">Nota para el profesor</span>
+                    <textarea
+                      value={serie.notes}
+                      onChange={(e) => handleSeriesDraftChange(index, "notes", e.target.value)}
+                      className="w-full min-h-[88px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-primary resize-none"
+                      placeholder="Ej: Necesité menos peso, más repeticiones o una corrección técnica."
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
+              <button onClick={() => setIsSeriesEditModalOpen(false)} className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl">
+                Cancelar
+              </button>
+              <button onClick={handleSaveSeriesEdits} className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl">
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSeriesDetailModalOpen && hasSeriesData && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -493,7 +787,7 @@ export function WorkoutDetailScreen({
               <button onClick={() => setIsSeriesDetailModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500">✕</button>
             </div>
             <div className="px-6 py-4 space-y-3">
-              {currentExercise.seriesData.map((serie: any, index: number) => (
+              {currentExerciseSeriesData.map((serie: any, index: number) => (
                 <div key={index} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-[13px]">{index + 1}</div>
@@ -533,6 +827,34 @@ export function WorkoutDetailScreen({
                 className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl transition-all active:scale-[0.98]"
               >
                 Continuar entrenando
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmIncompleteFinishModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[18px] font-bold text-gray-900 mb-2">Te faltaron ejercicios</h3>
+            <p className="text-[14px] text-gray-600 mb-6">
+              Te faltan <strong>{workout.exerciseList.length - completedExercises.length} ejercicio(s)</strong>. ¿Estás seguro de dejarlo así? Si aceptás, se guarda como incompleto para que el profesor vea la rutina tal como quedó.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowConfirmIncompleteFinishModal(false)}
+                className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowConfirmIncompleteFinishModal(false);
+                  handleFinishWorkout(true);
+                }}
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Guardar incompleto
               </button>
             </div>
           </div>

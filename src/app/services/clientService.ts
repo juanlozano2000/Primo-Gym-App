@@ -10,6 +10,71 @@ export interface WorkoutSummary {
 }
 
 export const clientService = {
+  async resolveAssignedPlanId(clientId: string, workoutId: string): Promise<string | null> {
+    try {
+      const { data: pending } = await supabase
+        .from('assigned_plans')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .eq('is_completed', false)
+        .order('scheduled_date', { ascending: true })
+        .limit(1);
+
+      if (pending && pending.length > 0) {
+        return pending[0].id;
+      }
+
+      const { data: latest } = await supabase
+        .from('assigned_plans')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('workout_id', workoutId)
+        .order('scheduled_date', { ascending: false })
+        .limit(1);
+
+      return latest && latest.length > 0 ? latest[0].id : null;
+    } catch (error) {
+      console.error('Error resolving assigned plan id:', error);
+      return null;
+    }
+  },
+
+  async appendAssignedPlanFeedback(assignedPlanId: string, feedback: string): Promise<void> {
+    try {
+      const cleanFeedback = feedback.trim();
+      if (!cleanFeedback) return;
+
+      const { data: planData, error: planErr } = await supabase
+        .from('assigned_plans')
+        .select('client_feedback')
+        .eq('id', assignedPlanId)
+        .maybeSingle();
+
+      if (planErr) {
+        console.warn('No se pudo leer feedback previo del plan:', planErr.message);
+      }
+
+      const currentFeedback = planData?.client_feedback?.trim() || '';
+      const hasSameFeedback = currentFeedback.includes(cleanFeedback);
+      if (hasSameFeedback) return;
+
+      const mergedFeedback = [currentFeedback, cleanFeedback]
+        .filter(Boolean)
+        .join('\n\n---\n\n');
+
+      const { error: updateErr } = await supabase
+        .from('assigned_plans')
+        .update({ client_feedback: mergedFeedback })
+        .eq('id', assignedPlanId);
+
+      if (updateErr) {
+        console.warn('No se pudo guardar feedback en assigned_plans:', updateErr.message);
+      }
+    } catch (error) {
+      console.warn('Error appending assigned plan feedback:', error);
+    }
+  },
   // 1. Obtener los próximos entrenamientos asignados al cliente
   async getUpcomingWorkouts(clientId: string): Promise<WorkoutSummary[]> {
     try {
@@ -224,20 +289,37 @@ export const clientService = {
   },
 
   // 5. Registrar que el cliente terminó su entrenamiento
-  async finishWorkout(clientId: string, workoutId: string, durationMinutes: number = 45) {
+  async finishWorkout(
+    clientId: string,
+    workoutId: string,
+    options: { durationMinutes?: number; isIncomplete?: boolean; completedExercises?: number; totalExercises?: number; notes?: string } = {}
+  ) {
     try {
-      // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
-      const { data: assignments } = await supabase
-        .from('assigned_plans')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('workout_id', workoutId)
-        .eq('is_completed', false)
-        .order('scheduled_date', { ascending: true })
-        .limit(1);
+      const durationMinutes = options.durationMinutes ?? 45;
+      const isIncomplete = options.isIncomplete ?? false;
+      const completedExercises = options.completedExercises ?? 0;
+      const totalExercises = options.totalExercises ?? 0;
+      const coachNotes = options.notes?.trim() || "";
+      const assignedPlanId = await this.resolveAssignedPlanId(clientId, workoutId);
 
-      if (assignments && assignments.length > 0) {
-        await supabase.from('assigned_plans').update({ is_completed: true }).eq('id', assignments[0].id);
+      // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
+      if (!isIncomplete && assignedPlanId) {
+        await supabase
+          .from('assigned_plans')
+          .update({ is_completed: true, completed_at: new Date().toISOString() })
+          .eq('id', assignedPlanId);
+      }
+
+      const statusNotes = isIncomplete
+        ? `Workout finalizado de forma incompleta: ${completedExercises}/${totalExercises} ejercicios completados.`
+        : `Workout completado: ${completedExercises || totalExercises}/${totalExercises || completedExercises} ejercicios completados.`;
+      const assignmentTag = assignedPlanId ? `[assigned_plan_id:${assignedPlanId}]` : "";
+      const sessionNotes = [assignmentTag, statusNotes, coachNotes || null]
+        .filter(Boolean)
+        .join("\n\n");
+
+      if (assignedPlanId && coachNotes) {
+        await this.appendAssignedPlanFeedback(assignedPlanId, coachNotes);
       }
 
       // b. Guardamos la sesión en el historial
@@ -246,12 +328,44 @@ export const clientService = {
         workout_id: workoutId,
         started_at: new Date(Date.now() - durationMinutes * 60000).toISOString(),
         ended_at: new Date().toISOString(),
-        duration_minutes: durationMinutes
+        duration_minutes: durationMinutes,
+        notes: sessionNotes,
+        feeling_rating: isIncomplete ? null : 5
       });
 
       return true;
     } catch (error) {
       console.error('Error al finalizar workout:', error);
+      return false;
+    }
+  },
+
+  // 5b. Registrar una sugerencia del cliente para que el coach la vea inmediatamente
+  async saveWorkoutSuggestion(clientId: string, workoutId: string, notes: string) {
+    try {
+      if (!notes.trim()) return true;
+
+      const assignedPlanId = await this.resolveAssignedPlanId(clientId, workoutId);
+      const assignmentTag = assignedPlanId ? `[assigned_plan_id:${assignedPlanId}]` : "";
+      const sessionNotes = [assignmentTag, notes.trim()].filter(Boolean).join("\n\n");
+
+      if (assignedPlanId) {
+        await this.appendAssignedPlanFeedback(assignedPlanId, notes);
+      }
+
+      await supabase.from('workout_sessions').insert({
+        client_id: clientId,
+        workout_id: workoutId,
+        started_at: new Date().toISOString(),
+        ended_at: new Date().toISOString(),
+        duration_minutes: 0,
+        notes: sessionNotes,
+        feeling_rating: null,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error al guardar sugerencia del workout:', error);
       return false;
     }
   },
