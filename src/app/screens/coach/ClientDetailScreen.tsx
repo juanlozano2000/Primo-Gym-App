@@ -115,12 +115,7 @@ export function ClientDetailScreen({
     );
   }
 
-  const hasClientSuggestions =
-    (client.recentWorkouts || []).some((workout: any) => workout.hasClientEdits) ||
-    (client.assignedPlans || []).some((plan: any) => {
-      const feedback = plan.clientFeedback || "";
-      return feedback.toLowerCase().includes("ajustes del cliente");
-    });
+  const hasClientSuggestions = Boolean(client.hasPendingSuggestions);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
