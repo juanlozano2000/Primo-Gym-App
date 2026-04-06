@@ -224,21 +224,36 @@ export const clientService = {
   },
 
   // 5. Registrar que el cliente terminó su entrenamiento
-  async finishWorkout(clientId: string, workoutId: string, durationMinutes: number = 45) {
+  async finishWorkout(
+    clientId: string,
+    workoutId: string,
+    options: { durationMinutes?: number; isIncomplete?: boolean; completedExercises?: number; totalExercises?: number } = {}
+  ) {
     try {
-      // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
-      const { data: assignments } = await supabase
-        .from('assigned_plans')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('workout_id', workoutId)
-        .eq('is_completed', false)
-        .order('scheduled_date', { ascending: true })
-        .limit(1);
+      const durationMinutes = options.durationMinutes ?? 45;
+      const isIncomplete = options.isIncomplete ?? false;
+      const completedExercises = options.completedExercises ?? 0;
+      const totalExercises = options.totalExercises ?? 0;
 
-      if (assignments && assignments.length > 0) {
-        await supabase.from('assigned_plans').update({ is_completed: true }).eq('id', assignments[0].id);
+      // a. Marcamos el plan asignado como completado (el más antiguo pendiente de este workout)
+      if (!isIncomplete) {
+        const { data: assignments } = await supabase
+          .from('assigned_plans')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('workout_id', workoutId)
+          .eq('is_completed', false)
+          .order('scheduled_date', { ascending: true })
+          .limit(1);
+
+        if (assignments && assignments.length > 0) {
+          await supabase.from('assigned_plans').update({ is_completed: true, completed_at: new Date().toISOString() }).eq('id', assignments[0].id);
+        }
       }
+
+      const sessionNotes = isIncomplete
+        ? `Workout finalizado de forma incompleta: ${completedExercises}/${totalExercises} ejercicios completados.`
+        : `Workout completado: ${completedExercises || totalExercises}/${totalExercises || completedExercises} ejercicios completados.`;
 
       // b. Guardamos la sesión en el historial
       await supabase.from('workout_sessions').insert({
@@ -246,7 +261,9 @@ export const clientService = {
         workout_id: workoutId,
         started_at: new Date(Date.now() - durationMinutes * 60000).toISOString(),
         ended_at: new Date().toISOString(),
-        duration_minutes: durationMinutes
+        duration_minutes: durationMinutes,
+        notes: sessionNotes,
+        feeling_rating: isIncomplete ? null : 5
       });
 
       return true;

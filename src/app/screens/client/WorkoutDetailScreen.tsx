@@ -15,9 +15,14 @@ interface WorkoutDetailScreenProps {
 type WorkoutProgress = {
   workoutId: string;
   currentExerciseIndex: number;
-  currentSet: number;
+  exerciseProgressById: Record<string, ExerciseProgress>;
   completedExercises: string[];
   timestamp: number;
+};
+
+type ExerciseProgress = {
+  completedSets: number;
+  isCompleted: boolean;
 };
 
 const WORKOUT_PROGRESS_PREFIX = "spoter_workout_progress_";
@@ -34,8 +39,7 @@ export function WorkoutDetailScreen({
   const [isFinishing, setIsFinishing] = useState(false);
 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [currentSet, setCurrentSet] = useState(1);
-  const [completedExercises, setCompletedExercises] = useState<string[]>([]);
+  const [exerciseProgressById, setExerciseProgressById] = useState<Record<string, ExerciseProgress>>({});
   const [isResting, setIsResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -45,6 +49,7 @@ export function WorkoutDetailScreen({
   // 🚨 Nuevos estados para persistencia
   const [hasUnsavedProgress, setHasUnsavedProgress] = useState(false);
   const [showConfirmDiscardModal, setShowConfirmDiscardModal] = useState(false);
+  const [showConfirmIncompleteFinishModal, setShowConfirmIncompleteFinishModal] = useState(false);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -65,8 +70,29 @@ export function WorkoutDetailScreen({
             // Solo restaurar si fue guardado hace menos de 12 horas
             if (Date.now() - progress.timestamp < 12 * 60 * 60 * 1000) {
               setCurrentExerciseIndex(progress.currentExerciseIndex);
-              setCurrentSet(progress.currentSet);
-              setCompletedExercises(progress.completedExercises);
+              if (progress.exerciseProgressById) {
+                setExerciseProgressById(progress.exerciseProgressById);
+              } else {
+                const fallbackProgress: Record<string, ExerciseProgress> = {};
+                if (Array.isArray(progress.completedExercises)) {
+                  progress.completedExercises.forEach((exerciseId: string) => {
+                    fallbackProgress[exerciseId] = {
+                      completedSets: 1,
+                      isCompleted: true,
+                    };
+                  });
+                }
+
+                const currentExercise = data?.exerciseList?.[progress.currentExerciseIndex];
+                if (currentExercise && typeof (progress as any).currentSet === "number") {
+                  fallbackProgress[currentExercise.id] = {
+                    completedSets: Math.max(0, (progress as any).currentSet - 1),
+                    isCompleted: false,
+                  };
+                }
+
+                setExerciseProgressById(fallbackProgress);
+              }
               toast.success("Progreso anterior restaurado ✓", { duration: 3000 });
             } else {
               localStorage.removeItem(progressKey);
@@ -98,7 +124,6 @@ export function WorkoutDetailScreen({
       clearInterval(restIntervalRef.current);
       restIntervalRef.current = null;
     }
-    setCurrentSet(1);
     setIsResting(false);
     setRestTimer(0);
   }, [currentExerciseIndex]);
@@ -108,17 +133,20 @@ export function WorkoutDetailScreen({
     if (!session?.user?.id || !workout) return;
 
     const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+    const completedExercises = Object.entries(exerciseProgressById)
+      .filter(([, progress]) => progress.isCompleted)
+      .map(([exerciseId]) => exerciseId);
     const progress: WorkoutProgress = {
       workoutId,
       currentExerciseIndex,
-      currentSet,
+      exerciseProgressById,
       completedExercises,
       timestamp: Date.now(),
     };
 
     localStorage.setItem(progressKey, JSON.stringify(progress));
     setHasUnsavedProgress(false);
-  }, [currentExerciseIndex, currentSet, completedExercises, workoutId, session?.user?.id, workout]);
+  }, [currentExerciseIndex, exerciseProgressById, workoutId, session?.user?.id, workout]);
 
   // 🚨 Efecto: Advertencia al refrescar si hay progreso
   useEffect(() => {
@@ -156,24 +184,49 @@ export function WorkoutDetailScreen({
   }
 
   const currentExercise = workout.exerciseList[currentExerciseIndex];
-  const totalSets = parseInt(currentExercise.sets);
+  const totalSets = Math.max(1, parseInt(currentExercise.sets, 10) || 0);
+  const currentExerciseProgress = exerciseProgressById[currentExercise.id] || {
+    completedSets: 0,
+    isCompleted: false,
+  };
+  const completedExercises = Object.entries(exerciseProgressById)
+    .filter(([, progress]) => progress.isCompleted)
+    .map(([exerciseId]) => exerciseId);
+  const hasAnyProgress = completedExercises.length > 0 || Object.values(exerciseProgressById).some((progress) => progress.completedSets > 0);
+  const completedSets = currentExerciseProgress.isCompleted
+    ? totalSets
+    : Math.min(currentExerciseProgress.completedSets, totalSets);
+  const currentSet = Math.min(completedSets + 1, totalSets);
   const isLastSet = currentSet >= totalSets;
   const isLastExercise = currentExerciseIndex === workout.exerciseList.length - 1;
-  const isExerciseCompleted = completedExercises.includes(currentExercise.id);
+  const isExerciseCompleted = currentExerciseProgress.isCompleted;
   const hasSeriesData = currentExercise.seriesData && currentExercise.seriesData.length > 0;
 
   const handleNextSet = () => {
+    if (isExerciseCompleted) return;
+
     if (isLastSet) {
-      // Última serie: marcar ejercicio completo
-      setCompletedExercises([...completedExercises, currentExercise.id]);
+      // Última serie: marcar ejercicio completo sin perder el detalle de las series previas
+      setExerciseProgressById((prev) => ({
+        ...prev,
+        [currentExercise.id]: {
+          completedSets: totalSets,
+          isCompleted: true,
+        },
+      }));
       setHasUnsavedProgress(true);
       toast.success("¡Ejercicio completado!");
-      setCurrentSet(1); // Reset para el siguiente ejercicio
       setRestTimer(0);
       setIsResting(false);
     } else {
       // No es la última serie: avanzar a la siguiente
-      setCurrentSet(currentSet + 1);
+      setExerciseProgressById((prev) => ({
+        ...prev,
+        [currentExercise.id]: {
+          completedSets: currentSet,
+          isCompleted: false,
+        },
+      }));
       setHasUnsavedProgress(true);
       toast.success(`Serie ${currentSet} completada`);
       
@@ -228,17 +281,29 @@ export function WorkoutDetailScreen({
   };
 
   // 🚨 MAGIA: Registrar en la Base de Datos que terminamos
-  const handleFinishWorkout = async () => {
+  const handleFinishWorkout = async (isIncomplete: boolean = false) => {
     if (!session?.user?.id) return;
     
     setIsFinishing(true);
     // Suponemos que cada ejercicio le tomó aprox 10 min
     const estimatedMinutes = workout.exerciseList.length * 10;
-    
-    const success = await clientService.finishWorkout(session.user.id, workout.id, estimatedMinutes);
+    const completedExercisesCount = completedExercises.length;
+    const totalExercises = workout.exerciseList.length;
+
+    const success = await clientService.finishWorkout(session.user.id, workout.id, {
+      durationMinutes: estimatedMinutes,
+      isIncomplete,
+      completedExercises: completedExercisesCount,
+      totalExercises,
+    });
     
     if (success) {
-      toast.success("¡Workout completado! Progreso guardado. 💪", { duration: 4000 });
+      toast.success(
+        isIncomplete
+          ? "Workout guardado como incompleto. El profesor podrá verlo."
+          : "¡Workout completado! Progreso guardado. 💪",
+        { duration: 4000 }
+      );
       // Limpiar progreso guardado al terminar
       if (session?.user?.id) {
         const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
@@ -252,8 +317,17 @@ export function WorkoutDetailScreen({
     }
   };
 
+  const handleFinishWorkoutPress = () => {
+    if (completedExercises.length < workout.exerciseList.length) {
+      setShowConfirmIncompleteFinishModal(true);
+      return;
+    }
+
+    handleFinishWorkout(false);
+  };
+
   const handleBackWithConfirmation = () => {
-    if (hasUnsavedProgress && completedExercises.length > 0) {
+    if (hasUnsavedProgress && hasAnyProgress) {
       pendingNavigationRef.current = onBack;
       setShowConfirmDiscardModal(true);
     } else {
@@ -271,10 +345,13 @@ export function WorkoutDetailScreen({
   const handleSaveManually = () => {
     if (session?.user?.id) {
       const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+      const completedExercises = Object.entries(exerciseProgressById)
+        .filter(([, progress]) => progress.isCompleted)
+        .map(([exerciseId]) => exerciseId);
       const progress: WorkoutProgress = {
         workoutId,
         currentExerciseIndex,
-        currentSet,
+        exerciseProgressById,
         completedExercises,
         timestamp: Date.now(),
       };
@@ -341,7 +418,7 @@ export function WorkoutDetailScreen({
                 <p className="text-[20px] font-bold text-gray-900">{currentExercise.sets}</p>
               </div>
               <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[13px] text-gray-600 mb-1">Objetivo</p>
+                <p className="text-[13px] text-gray-600 mb-1">Reps</p>
                 <p className="text-[18px] font-bold text-gray-900 truncate px-1">
                   {currentExercise.seriesData?.[0]?.reps ? `${currentExercise.seriesData[0].reps} reps` : "-"}
                 </p>
@@ -385,13 +462,13 @@ export function WorkoutDetailScreen({
                 : `Siguiente serie (${currentSet}/${totalSets})`
               }
             </CTAButton>
-            {completedExercises.length > 0 && (
+            {hasAnyProgress && (
               <button
                 onClick={handleSaveManually}
                 className="mt-3 w-full px-4 py-3 bg-success/10 border border-success/30 rounded-xl text-success font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-success/20 transition-all active:scale-[0.98]"
               >
                 <Save className="w-4 h-4" />
-                Guardar progreso ({completedExercises.length} ejercicios)
+                Guardar progreso
               </button>
             )}          </div>
 
@@ -412,10 +489,14 @@ export function WorkoutDetailScreen({
               <CTAButton
                 variant="accent"
                 fullWidth
-                onClick={handleFinishWorkout}
-                disabled={completedExercises.length !== workout.exerciseList.length || isFinishing}
+                  onClick={handleFinishWorkoutPress}
+                  disabled={isFinishing}
               >
-                {isFinishing ? "Guardando..." : "Finalizar workout"}
+                  {isFinishing
+                    ? "Guardando..."
+                    : completedExercises.length !== workout.exerciseList.length
+                    ? "Finalizar incompleto"
+                    : "Finalizar workout"}
               </CTAButton>
             )}
           </div>
@@ -425,7 +506,9 @@ export function WorkoutDetailScreen({
           <h4 className="mb-3">Todos los ejercicios</h4>
           <div className="space-y-2">
             {workout.exerciseList.map((exercise: any, index: number) => {
-              const isDone = completedExercises.includes(exercise.id);
+              const exerciseProgress = exerciseProgressById[exercise.id];
+              const isDone = exerciseProgress?.isCompleted || false;
+              const completedSeries = Math.min(exerciseProgress?.completedSets || 0, Number(exercise.sets) || 0);
               const isCurrent = index === currentExerciseIndex;
               
               return (
@@ -449,7 +532,11 @@ export function WorkoutDetailScreen({
                       <div className="flex-1 min-w-0">
                         <p className="text-[15px] font-medium truncate">{exercise.name}</p>
                         <p className={`text-[13px] ${isCurrent ? "opacity-80" : "opacity-60"}`}>
-                          {exercise.sets} series
+                          {isDone
+                            ? `${exercise.sets} series completadas`
+                            : completedSeries > 0
+                            ? `${completedSeries}/${exercise.sets} series guardadas`
+                            : `${exercise.sets} series`}
                         </p>
                       </div>
                     </div>
@@ -533,6 +620,34 @@ export function WorkoutDetailScreen({
                 className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl transition-all active:scale-[0.98]"
               >
                 Continuar entrenando
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmIncompleteFinishModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[18px] font-bold text-gray-900 mb-2">Te faltaron ejercicios</h3>
+            <p className="text-[14px] text-gray-600 mb-6">
+              Te faltan <strong>{workout.exerciseList.length - completedExercises.length} ejercicio(s)</strong>. ¿Estás seguro de dejarlo así? Si aceptás, se guarda como incompleto para que el profesor vea la rutina tal como quedó.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowConfirmIncompleteFinishModal(false)}
+                className="w-full h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowConfirmIncompleteFinishModal(false);
+                  handleFinishWorkout(true);
+                }}
+                className="w-full h-11 bg-primary hover:bg-primary/90 text-white font-medium rounded-xl transition-all active:scale-[0.98]"
+              >
+                Guardar incompleto
               </button>
             </div>
           </div>

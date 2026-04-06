@@ -295,10 +295,15 @@ export function ClientDetailScreen({
                         month: "long"
                       })}
                     </p>
+                    {workout.notes && (
+                      <p className="text-[12px] text-gray-500 mt-1">
+                        {workout.notes}
+                      </p>
+                    )}
                   </div>
-                  {workout.completed && (
-                    <CheckCircle className="w-5 h-5 text-success bg-success/10 rounded-full p-0.5" />
-                  )}
+                  <div className={`px-2 py-1 rounded-md text-[12px] font-medium ${workout.completed ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
+                    {workout.completed ? "Completo" : "Incompleto"}
+                  </div>
                 </div>
               ))}
             </div>

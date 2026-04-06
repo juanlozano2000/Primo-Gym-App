@@ -49,7 +49,7 @@ export const dashboardService = {
       if (clientIds.length > 0) {
         const { data: sData } = await supabase
           .from('workout_sessions')
-          .select('client_id, ended_at')
+          .select('client_id, ended_at, notes')
           .in('client_id', clientIds)
           .not('ended_at', 'is', null)
           .order('ended_at', { ascending: false });
@@ -246,7 +246,8 @@ async getClientDetail(clientId: string) {
       const recentWorkouts = sessionsData?.map((ws: any) => ({
         name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
         date: ws.ended_at,
-        completed: true
+        completed: !(ws.notes || "").toLowerCase().includes("incompleta"),
+        notes: ws.notes || null
       })) || [];
 
       // Adherencia = asistencia: solo contamos las rutinas cuya fecha ya pasó
