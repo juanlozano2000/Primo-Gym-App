@@ -1,6 +1,6 @@
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { Plus, Copy, FileText, Loader2, Trash2 } from "lucide-react";
+import { Plus, Copy, FileText, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
@@ -12,6 +12,15 @@ interface AssignedPlanData {
   scheduledDate: string;
   isCompleted: boolean;
   exercises: { id: string; name: string; sets: number }[];
+  clientSuggestions: string[];
+}
+
+interface UnmatchedSuggestion {
+  workoutId: string;
+  assignedPlanId?: string;
+  date: string;
+  items: string[];
+  reason: "orphan-plan" | "orphan-workout";
 }
 
 interface EditPlanScreenProps {
@@ -23,6 +32,29 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [plans, setPlans] = useState<AssignedPlanData[]>([]);
   const [clientName, setClientName] = useState("Cliente");
+  const [unmatchedSuggestions, setUnmatchedSuggestions] = useState<UnmatchedSuggestion[]>([]);
+
+  const parseClientSuggestions = (notes: string | null | undefined) => {
+    if (!notes) return [];
+
+    const marker = "ajustes del cliente:";
+    const lowerNotes = notes.toLowerCase();
+    const markerIndex = lowerNotes.indexOf(marker);
+    if (markerIndex === -1) return [];
+
+    return notes
+      .slice(markerIndex + marker.length)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter((line) => !line.toLowerCase().startsWith("workout "));
+  };
+
+  const parseAssignedPlanId = (notes: string | null | undefined) => {
+    if (!notes) return null;
+    const match = notes.match(/\[assigned_plan_id:([a-f0-9-]+)\]/i);
+    return match?.[1] || null;
+  };
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -45,6 +77,7 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
             workout_id,
             scheduled_date,
             is_completed,
+            client_feedback,
             workouts (
               title,
               workout_items (
@@ -59,9 +92,59 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
 
         if (error) throw error;
 
+        const { data: sessionsData, error: sessionsErr } = await supabase
+          .from("workout_sessions")
+          .select("workout_id, notes, ended_at")
+          .eq("client_id", clientId)
+          .not("ended_at", "is", null)
+          .order("ended_at", { ascending: false });
+
+        if (sessionsErr) throw sessionsErr;
+
+        const suggestionsByWorkout = new Map<string, string[]>();
+        const suggestionsByPlanId = new Map<string, string[]>();
+        const parsedSessionSuggestions: UnmatchedSuggestion[] = [];
+        (sessionsData || []).forEach((session: any) => {
+          const parsed = parseClientSuggestions(session.notes);
+          if (parsed.length === 0) return;
+          const assignedPlanId = parseAssignedPlanId(session.notes);
+
+          const previous = suggestionsByWorkout.get(session.workout_id) || [];
+          const merged = [...previous];
+          parsed.forEach((item) => {
+            if (!merged.includes(item)) {
+              merged.push(item);
+            }
+          });
+          suggestionsByWorkout.set(session.workout_id, merged);
+
+          if (assignedPlanId) {
+            const planPrev = suggestionsByPlanId.get(assignedPlanId) || [];
+            const planMerged = [...planPrev];
+            parsed.forEach((item) => {
+              if (!planMerged.includes(item)) {
+                planMerged.push(item);
+              }
+            });
+            suggestionsByPlanId.set(assignedPlanId, planMerged);
+          }
+
+          parsedSessionSuggestions.push({
+            workoutId: session.workout_id,
+            assignedPlanId: assignedPlanId || undefined,
+            date: session.ended_at,
+            items: parsed,
+            reason: "orphan-workout",
+          });
+        });
+
         const formatted: AssignedPlanData[] = (data || []).map((ap: any) => {
           const w = Array.isArray(ap.workouts) ? ap.workouts[0] : ap.workouts;
           const items = w?.workout_items || [];
+          const fromPlanFeedback = parseClientSuggestions(ap.client_feedback);
+          const fromPlanId = suggestionsByPlanId.get(ap.id) || [];
+          const fromWorkout = suggestionsByWorkout.get(ap.workout_id) || [];
+          const mergedSuggestions = Array.from(new Set([...fromPlanFeedback, ...fromPlanId, ...fromWorkout]));
           return {
             id: ap.id,
             workoutId: ap.workout_id,
@@ -73,10 +156,28 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
               name: Array.isArray(item.exercises) ? item.exercises[0]?.name : (item.exercises?.name || "Ejercicio"),
               sets: item.sets || 0,
             })),
+            clientSuggestions: mergedSuggestions,
           };
         });
 
         setPlans(formatted);
+
+        const assignedPlanIds = new Set((data || []).map((ap: any) => ap.id));
+        const assignedWorkoutIds = new Set((data || []).map((ap: any) => ap.workout_id));
+        const unmatched = parsedSessionSuggestions
+          .filter((entry) => {
+            if (entry.assignedPlanId && !assignedPlanIds.has(entry.assignedPlanId)) {
+              entry.reason = "orphan-plan";
+              return true;
+            }
+            if (!assignedWorkoutIds.has(entry.workoutId)) {
+              entry.reason = "orphan-workout";
+              return true;
+            }
+            return false;
+          })
+          .slice(0, 3);
+        setUnmatchedSuggestions(unmatched);
       } catch (err) {
         console.error("Error cargando planes:", err);
         toast.error("Error al cargar los planes");
@@ -145,6 +246,35 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
       <AppBar title={`Plan de ${clientName}`} onBack={onBack} />
 
       <div className="px-4 py-6 space-y-6">
+        {unmatchedSuggestions.length > 0 && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-2 mb-3">
+              <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-[13px] font-semibold text-amber-900">Sugerencias del cliente en rutinas anteriores</p>
+                <p className="text-[12px] text-amber-800">Estas sugerencias se guardaron en sesiones que no coinciden con las rutinas asignadas actualmente.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {unmatchedSuggestions.map((entry, index) => (
+                <div key={`${entry.workoutId}-${index}`} className="rounded-lg bg-white/80 border border-amber-100 p-3">
+                  <p className="text-[11px] text-gray-600 mb-1">
+                    Workout: {entry.workoutId.slice(0, 8)} • {new Date(entry.date).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  </p>
+                  <p className="text-[11px] text-amber-800 mb-2">
+                    {entry.reason === "orphan-plan"
+                      ? "Asignada a un plan anterior que ya no existe"
+                      : "Pertenece a una rutina que ya no está asignada"}
+                  </p>
+                  {entry.items.map((item, itemIndex) => (
+                    <p key={itemIndex} className="text-[13px] text-amber-950">{item}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {plans.length === 0 ? (
           <div className="bg-white rounded-2xl p-6 border border-dashed border-border text-center">
             <p className="text-[15px] text-gray-500">Este cliente no tiene rutinas asignadas</p>
@@ -177,6 +307,25 @@ export function EditPlanScreen({ clientId, onBack }: EditPlanScreenProps) {
                         <span className="text-[13px] text-gray-500">{ex.sets} series</span>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {plan.clientSuggestions.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <div className="flex items-start gap-2 mb-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-[13px] font-semibold text-amber-900">Mejoras propuestas por el cliente</p>
+                        <p className="text-[12px] text-amber-800">Revisalas antes de editar la rutina.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {plan.clientSuggestions.map((suggestion, index) => (
+                        <div key={index} className="rounded-lg bg-white/70 px-3 py-2 text-[13px] text-amber-950 border border-amber-100">
+                          {suggestion}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

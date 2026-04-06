@@ -78,6 +78,7 @@ export const dashboardService = {
         // Atajamos el perfil por si viene como array u objeto
         const profileData = Array.isArray(relation.profiles) ? relation.profiles[0] : relation.profiles;
         const clientId = relation.client_id;
+        const clientName = profileData?.full_name || "Cliente";
         
         const clientSessions = sessionsData.filter(s => s.client_id === clientId);
         const lastSession = clientSessions[0]; 
@@ -89,6 +90,7 @@ export const dashboardService = {
 
         if (lastSession) {
           const sessionDate = new Date(lastSession.ended_at);
+          const sessionNotes = (lastSession.notes || "").toLowerCase();
           
           // Comparar por día calendario (midnights), no por diferencia bruta de ms
           const sessionDay = new Date(sessionDate);
@@ -109,6 +111,14 @@ export const dashboardService = {
               hasAlert = true;
               alertMessage = `Sin registros por ${diffDays} días`;
             }
+          }
+
+          if (sessionNotes.includes("ajustes del cliente")) {
+            hasAlert = true;
+            const suggestionMessage = `El cliente ${clientName} solicitó una sugerencia en la rutina`;
+            alertMessage = alertMessage
+              ? `${alertMessage} · ${suggestionMessage}`
+              : suggestionMessage;
           }
         } else {
           hasAlert = true;
@@ -203,17 +213,17 @@ async getClientDetail(clientId: string) {
       // 🚨 RELACIONES EXPLÍCITAS para evitar el error PGRST201
       const { data: assignedData } = await supabase
         .from('assigned_plans')
-        .select('id, workout_id, scheduled_date, is_completed, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
+        .select('id, workout_id, scheduled_date, is_completed, client_feedback, workouts!assigned_plans_workout_id_fkey(title, duration_weeks, workout_items(id))')
         .eq('client_id', clientId)
         .order('scheduled_date', { ascending: false });
 
       const { data: sessionsData } = await supabase
         .from('workout_sessions')
-        .select('id, ended_at, workouts!workout_sessions_workout_id_fkey(title)')
+        .select('id, ended_at, notes, workouts!workout_sessions_workout_id_fkey(title)')
         .eq('client_id', clientId)
         .not('ended_at', 'is', null)
         .order('ended_at', { ascending: false })
-        .limit(3);
+        .limit(10);
 
       const weights = metricsData?.map(m => m.weight_kg).filter(Boolean) || [];
       const fats = metricsData?.map(m => m.body_fat_pct).filter(Boolean) || [];
@@ -240,15 +250,22 @@ async getClientDetail(clientId: string) {
           endDate: endDate.toISOString().split('T')[0],
           isCompleted: ap.is_completed,
           duration: `${estimatedMinutes} min`,
+          clientFeedback: ap.client_feedback || null,
         };
       }) || [];
 
-      const recentWorkouts = sessionsData?.map((ws: any) => ({
-        name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
-        date: ws.ended_at,
-        completed: !(ws.notes || "").toLowerCase().includes("incompleta"),
-        notes: ws.notes || null
-      })) || [];
+      const recentWorkouts = sessionsData?.map((ws: any) => {
+        const notesText = ws.notes || "";
+        const normalizedNotes = notesText.toLowerCase();
+
+        return {
+          name: Array.isArray(ws.workouts) ? ws.workouts[0]?.title : (ws.workouts?.title || "Rutina"),
+          date: ws.ended_at,
+          completed: !normalizedNotes.includes("incompleta"),
+          hasClientEdits: normalizedNotes.includes("ajustes del cliente"),
+          notes: notesText || null
+        };
+      }) || [];
 
       // Adherencia = asistencia: solo contamos las rutinas cuya fecha ya pasó
       const todayForAdherence = new Date().toISOString().split('T')[0];
