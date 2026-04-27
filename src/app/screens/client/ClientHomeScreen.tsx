@@ -52,6 +52,14 @@ export function ClientHomeScreen({
   
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
+  const workoutsTotalForUI = progress.totalWorkouts > 0 ? progress.totalWorkouts : upcomingWorkouts.length;
+  const workoutsCompletedForUI = Math.min(progress.completedWorkouts, workoutsTotalForUI);
+  const progressForUI = {
+    ...progress,
+    totalWorkouts: workoutsTotalForUI,
+    completedWorkouts: workoutsCompletedForUI,
+  };
+
   const firstName = fullName?.split(" ")[0] || "Atleta";
   
   const coach = {
@@ -176,19 +184,19 @@ export function ClientHomeScreen({
           )}
         </div>
 
-        {progress.completedWorkouts > 0 || upcomingWorkouts.length > 0 ? (
+        {progressForUI.completedWorkouts > 0 || upcomingWorkouts.length > 0 ? (
           <div className="bg-white rounded-2xl p-4 border border-border shadow-sm">
             <h3 className="font-semibold mb-3">Progreso esta semana</h3>
 
             <div className="grid grid-cols-2 gap-3 mb-4">
               <MetricChip
                 label="Series"
-                value={`${progress.completedSets}/${progress.totalSets}`}
+                value={`${progressForUI.completedSets}/${progressForUI.totalSets}`}
                 variant="primary"
               />
               <MetricChip
                 label="Workouts"
-                value={`${progress.completedWorkouts}/${progress.totalWorkouts}`}
+                value={`${progressForUI.completedWorkouts}/${progressForUI.totalWorkouts}`}
                 variant="success"
               />
             </div>
@@ -225,7 +233,7 @@ export function ClientHomeScreen({
         </div>
 
         <GymStoryGenerator 
-          metrics={progress}
+          metrics={progressForUI}
           userName={fullName || firstName}
           gymName={gymName || undefined}
           gymLogo={gymLogoUrl || undefined}
