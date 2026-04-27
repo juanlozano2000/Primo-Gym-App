@@ -9,6 +9,49 @@ export interface WorkoutSummary {
   scheduledDate: string;
 }
 
+type AssignmentRecord = {
+  id: string;
+  workout_id: string;
+  scheduled_date: string;
+  is_completed: boolean;
+  completed_at?: string | null;
+  workouts: any;
+};
+
+function getCurrentWeekRange(referenceDate: Date = new Date()) {
+  const now = new Date(referenceDate);
+  const dayOfWeek = now.getDay();
+  const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(diff);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+  return { startOfWeek, endOfWeek };
+}
+
+function isDateInCurrentWeek(dateValue?: string | null, referenceDate: Date = new Date()): boolean {
+  if (!dateValue) return false;
+  const parsedDate = new Date(dateValue);
+  if (Number.isNaN(parsedDate.getTime())) return false;
+
+  const { startOfWeek, endOfWeek } = getCurrentWeekRange(referenceDate);
+  return parsedDate >= startOfWeek && parsedDate < endOfWeek;
+}
+
+function getWeeklyAwareStatus(assignment: Pick<AssignmentRecord, 'is_completed' | 'completed_at'>): 'pending' | 'completed' {
+  if (!assignment.is_completed) return 'pending';
+
+  // Si fue completado en otra semana, se reinicia para la semana actual.
+  if (assignment.completed_at && !isDateInCurrentWeek(assignment.completed_at)) {
+    return 'pending';
+  }
+
+  return 'completed';
+}
+
 export const clientService = {
   async resolveAssignedPlanId(clientId: string, workoutId: string): Promise<string | null> {
     try {
@@ -78,7 +121,7 @@ export const clientService = {
   // 1. Obtener los próximos entrenamientos asignados al cliente
   async getUpcomingWorkouts(clientId: string): Promise<WorkoutSummary[]> {
     try {
-      // Buscamos los planes asignados que NO están completados, ordenados por fecha
+      // Traemos asignaciones y aplicamos estado semanal para evitar completados "pegados".
       const { data, error } = await supabase
         .from('assigned_plans')
         .select(`
@@ -86,20 +129,20 @@ export const clientService = {
           workout_id,
           scheduled_date,
           is_completed,
+          completed_at,
           workouts (
             title,
             workout_items (id)
           )
         `)
         .eq('client_id', clientId)
-        .eq('is_completed', false)
         .order('scheduled_date', { ascending: true })
-        .limit(3); // Traemos los próximos 3
+        .limit(20);
 
       if (error) throw error;
 
       // Formateamos la data para que la UI la entienda fácil
-      const formattedWorkouts = data?.map((assignment: any) => {
+      const formattedWorkouts = (data as AssignmentRecord[] | null)?.map((assignment) => {
         // Atajamos los workouts por si vienen en array
         const workoutData = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
         // Contamos cuántos ejercicios tiene la rutina
@@ -113,12 +156,12 @@ export const clientService = {
           title: workoutData?.title || 'Rutina asignada',
           exercises: exerciseCount,
           duration: estimatedDuration,
-          status: 'pending' as const,
+          status: getWeeklyAwareStatus(assignment),
           scheduledDate: assignment.scheduled_date
         };
       }) || [];
 
-      return formattedWorkouts;
+      return formattedWorkouts.filter((w) => w.status !== 'completed').slice(0, 3);
 
     } catch (error) {
       console.error('Error fetching upcoming workouts:', error);
@@ -143,14 +186,33 @@ export const clientService = {
       const { data: weekAssignments } = await supabase
         .from('assigned_plans')
         .select(`
-          id, workout_id, is_completed,
+          id, workout_id, is_completed, completed_at,
           workouts ( workout_items (sets) )
         `)
         .eq('client_id', clientId)
         .gte('scheduled_date', startOfWeek.toISOString())
         .lt('scheduled_date', endOfWeek.toISOString());
 
-      const assignments = weekAssignments || [];
+      let assignments = (weekAssignments as AssignmentRecord[] | null) || [];
+
+      // Si no hay agenda nueva esta semana, usamos pendientes de arrastre para evitar 0/0 engañoso.
+      if (assignments.length === 0) {
+        const { data: carryOverAssignments } = await supabase
+          .from('assigned_plans')
+          .select(`
+            id, workout_id, is_completed, completed_at,
+            workouts ( workout_items (sets) )
+          `)
+          .eq('client_id', clientId)
+          .lt('scheduled_date', startOfWeek.toISOString())
+          .order('scheduled_date', { ascending: false })
+          .limit(7);
+
+        assignments = ((carryOverAssignments as AssignmentRecord[] | null) || []).filter(
+          (assignment) => getWeeklyAwareStatus(assignment) !== 'completed'
+        );
+      }
+
       const totalWorkouts = assignments.length;
 
       // Calcular series totales sumando los sets de cada workout_item de cada assignment
@@ -161,7 +223,7 @@ export const clientService = {
         const items = workoutData?.workout_items || [];
         const assignmentSets = items.reduce((acc: number, item: any) => acc + (item.sets || 0), 0);
         totalSets += assignmentSets;
-        if (assignment.is_completed) {
+        if (getWeeklyAwareStatus(assignment) === 'completed') {
           completedSets += assignmentSets;
         }
       }
@@ -171,7 +233,8 @@ export const clientService = {
         .from('workout_sessions')
         .select('id, duration_minutes')
         .eq('client_id', clientId)
-        .gte('ended_at', startOfWeek.toISOString());
+        .gte('ended_at', startOfWeek.toISOString())
+        .lt('ended_at', endOfWeek.toISOString());
 
       const completedWorkouts = sessions?.length || 0;
       const totalTimeMinutes = sessions?.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0) || 0;
@@ -207,7 +270,7 @@ export const clientService = {
       const { data, error } = await supabase
         .from('assigned_plans')
         .select(`
-          id, workout_id, scheduled_date, is_completed,
+          id, workout_id, scheduled_date, is_completed, completed_at,
           workouts (title, workout_items(id))
         `)
         .eq('client_id', clientId)
@@ -215,7 +278,7 @@ export const clientService = {
 
       if (error) throw error;
 
-      return data?.map((assignment: any) => {
+      return (data as AssignmentRecord[] | null)?.map((assignment) => {
         const workoutData = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
         const exerciseCount = workoutData?.workout_items?.length || 0;
         return {
@@ -223,7 +286,7 @@ export const clientService = {
           title: workoutData?.title || 'Rutina',
           exercises: exerciseCount,
           duration: `${exerciseCount * 10} min`,
-          status: assignment.is_completed ? 'completed' : 'pending',
+          status: getWeeklyAwareStatus(assignment),
           scheduledDate: assignment.scheduled_date
         };
       }) || [];
