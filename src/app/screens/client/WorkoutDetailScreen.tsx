@@ -45,6 +45,7 @@ export function WorkoutDetailScreen({
   const [workout, setWorkout] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null); // 🚨 NUEVO: ID de la sesión en la BD
 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [exerciseProgressById, setExerciseProgressById] = useState<Record<string, ExerciseProgress>>({});
@@ -70,6 +71,17 @@ export function WorkoutDetailScreen({
       setIsLoading(true);
       const data = await clientService.getWorkoutDetail(workoutId);
       setWorkout(data);
+
+      // 🚨 NUEVO: Crear sesión en la BD
+      if (session?.user?.id) {
+        const newSessionId = await clientService.createWorkoutSession(session.user.id, workoutId);
+        if (newSessionId) {
+          setSessionId(newSessionId);
+        }
+        else {
+          toast.error('No se pudo crear la sesión de workout en el servidor. Algunas acciones no se guardarán.');
+        }
+      }
       
       // 🚨 Restaurar progreso guardado del localStorage
       if (session?.user?.id) {
@@ -326,6 +338,25 @@ export function WorkoutDetailScreen({
         },
       }));
       setHasUnsavedProgress(true);
+      
+      // 🚨 NUEVO: Registrar esta serie en exercise_logs
+      if (sessionId) {
+        // Obtener data de la última serie si existe
+        const lastSeriesData = currentExerciseSeriesData?.[totalSets - 1];
+        clientService.logExerciseSet(
+          sessionId,
+          currentExercise.exerciseId || currentExercise.id,
+          totalSets,
+          lastSeriesData?.reps ? parseInt(lastSeriesData.reps) : undefined,
+          lastSeriesData?.weight ? parseFloat(lastSeriesData.weight) : undefined,
+          lastSeriesData?.rir ? parseInt(lastSeriesData.rir) : undefined
+        ).catch((err) => {
+          console.error("Error logging final set:", err);
+          toast.error('No se pudo guardar la serie final en el servidor');
+        });
+        clientService.recordWeeklyCompletedSet(session.user.id);
+      }
+      
       toast.success("¡Ejercicio completado!");
       setRestTimer(0);
       setIsResting(false);
@@ -339,6 +370,24 @@ export function WorkoutDetailScreen({
         },
       }));
       setHasUnsavedProgress(true);
+      
+      // 🚨 NUEVO: Registrar esta serie en exercise_logs
+      if (sessionId) {
+        const seriesData = currentExerciseSeriesData?.[currentSet - 1];
+        clientService.logExerciseSet(
+          sessionId,
+          currentExercise.exerciseId || currentExercise.id,
+          currentSet,
+          seriesData?.reps ? parseInt(seriesData.reps) : undefined,
+          seriesData?.weight ? parseFloat(seriesData.weight) : undefined,
+          seriesData?.rir ? parseInt(seriesData.rir) : undefined
+        ).catch((err) => {
+          console.error("Error logging set:", err);
+          toast.error('No se pudo guardar la serie en el servidor');
+        });
+        clientService.recordWeeklyCompletedSet(session.user.id);
+      }
+      
       toast.success(`Serie ${currentSet} completada`);
       
       // Limpiar interval anterior si existe
@@ -400,13 +449,15 @@ export function WorkoutDetailScreen({
     const estimatedMinutes = workout.exerciseList.length * 10;
     const completedExercisesCount = completedExercises.length;
     const totalExercises = workout.exerciseList.length;
+    const coachNotes = buildCoachNotes(isIncomplete);
 
     const success = await clientService.finishWorkout(session.user.id, workout.id, {
       durationMinutes: estimatedMinutes,
       isIncomplete,
       completedExercises: completedExercisesCount,
       totalExercises,
-      notes: buildCoachNotes(isIncomplete),
+      notes: coachNotes,
+      sessionId: sessionId || undefined,
     });
     
     if (success) {

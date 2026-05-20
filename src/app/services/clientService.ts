@@ -52,6 +52,31 @@ function getWeeklyAwareStatus(assignment: Pick<AssignmentRecord, 'is_completed' 
   return 'completed';
 }
 
+function getWeeklyLocalSetsKey(clientId: string, weekStart: Date): string {
+  return `spoter_weekly_sets_${clientId}_${weekStart.toISOString().slice(0, 10)}`;
+}
+
+function getWeeklyLocalCompletedSets(clientId: string, weekStart: Date): number {
+  if (typeof window === 'undefined') return 0;
+
+  const storageKey = getWeeklyLocalSetsKey(clientId, weekStart);
+  const rawValue = window.localStorage.getItem(storageKey);
+  if (!rawValue) return 0;
+
+  const parsedValue = Number(rawValue);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 0;
+}
+
+function incrementWeeklyLocalCompletedSets(clientId: string, weekStart: Date): number {
+  if (typeof window === 'undefined') return 0;
+
+  const storageKey = getWeeklyLocalSetsKey(clientId, weekStart);
+  const currentValue = getWeeklyLocalCompletedSets(clientId, weekStart);
+  const nextValue = currentValue + 1;
+  window.localStorage.setItem(storageKey, String(nextValue));
+  return nextValue;
+}
+
 export const clientService = {
   async resolveAssignedPlanId(clientId: string, workoutId: string): Promise<string | null> {
     try {
@@ -182,7 +207,7 @@ export const clientService = {
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(endOfWeek.getDate() + 7);
 
-      // 1. Planes asignados esta semana (total de workouts programados)
+      // 1. Planes asignados al cliente (total real de workouts)
       const { data: weekAssignments } = await supabase
         .from('assigned_plans')
         .select(`
@@ -190,43 +215,47 @@ export const clientService = {
           workouts ( workout_items (sets) )
         `)
         .eq('client_id', clientId)
-        .gte('scheduled_date', startOfWeek.toISOString())
-        .lt('scheduled_date', endOfWeek.toISOString());
+        .order('scheduled_date', { ascending: true });
 
-      let assignments = (weekAssignments as AssignmentRecord[] | null) || [];
+      const assignments = (weekAssignments as AssignmentRecord[] | null) || [];
 
-      // Si no hay agenda nueva esta semana, usamos pendientes de arrastre para evitar 0/0 engañoso.
-      if (assignments.length === 0) {
-        const { data: carryOverAssignments } = await supabase
-          .from('assigned_plans')
-          .select(`
-            id, workout_id, is_completed, completed_at,
-            workouts ( workout_items (sets) )
-          `)
-          .eq('client_id', clientId)
-          .lt('scheduled_date', startOfWeek.toISOString())
-          .order('scheduled_date', { ascending: false })
-          .limit(7);
+      // Agrupamos por workout_id para que los repetidos no inflen el progreso.
+      const uniqueAssignments = Array.from(
+        new Map(assignments.map((assignment) => [assignment.workout_id, assignment])).values()
+      );
 
-        assignments = ((carryOverAssignments as AssignmentRecord[] | null) || []).filter(
-          (assignment) => getWeeklyAwareStatus(assignment) !== 'completed'
-        );
-      }
+      const totalWorkouts = uniqueAssignments.length;
 
-      const totalWorkouts = assignments.length;
-
-      // Calcular series totales sumando los sets de cada workout_item de cada assignment
+      // Calcular series totales sumando los sets de cada workout único.
       let totalSets = 0;
-      let completedSets = 0;
-      for (const assignment of assignments) {
+      for (const assignment of uniqueAssignments) {
         const workoutData: any = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
         const items = workoutData?.workout_items || [];
         const assignmentSets = items.reduce((acc: number, item: any) => acc + (item.sets || 0), 0);
         totalSets += assignmentSets;
-        if (getWeeklyAwareStatus(assignment) === 'completed') {
-          completedSets += assignmentSets;
-        }
       }
+
+      // 🚨 NUEVA LÓGICA: Contar series completadas desde exercise_logs (en lugar de solo workouts completos)
+      // Alternativa más simple: contar desde workout_sessions que tiene exercise_logs relacionados
+      const { data: weekSessions } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .gte('started_at', startOfWeek.toISOString())
+        .lt('started_at', endOfWeek.toISOString());
+
+      let completedSets = 0;
+      if (weekSessions && weekSessions.length > 0) {
+        const sessionIds = weekSessions.map((s: any) => s.id);
+        const { data: logsForWeek } = await supabase
+          .from('exercise_logs')
+          .select('id')
+          .in('session_id', sessionIds);
+        completedSets = logsForWeek?.length || 0;
+      }
+
+      const localCompletedSets = getWeeklyLocalCompletedSets(clientId, startOfWeek);
+      completedSets = Math.max(completedSets, localCompletedSets);
 
       // 2. Sesiones completadas esta semana
       const { data: sessions } = await supabase
@@ -236,7 +265,9 @@ export const clientService = {
         .gte('ended_at', startOfWeek.toISOString())
         .lt('ended_at', endOfWeek.toISOString());
 
-      const completedWorkouts = sessions?.length || 0;
+      const completedWorkouts = uniqueAssignments.filter(
+        (assignment) => getWeeklyAwareStatus(assignment) === 'completed'
+      ).length;
       const totalTimeMinutes = sessions?.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0) || 0;
       
       const hours = Math.floor(totalTimeMinutes / 60);
@@ -278,9 +309,19 @@ export const clientService = {
 
       if (error) throw error;
 
-      return (data as AssignmentRecord[] | null)?.map((assignment) => {
+      const assignments = (data as AssignmentRecord[] | null) || [];
+
+      // Agrupamos por workout_id para mostrar cada rutina una sola vez en la UI.
+      // Como la query viene ordenada por fecha descendente, nos quedamos con la
+      // primera aparición de cada workout (la más reciente).
+      const uniqueAssignments = Array.from(
+        new Map(assignments.map((assignment) => [assignment.workout_id, assignment])).values()
+      );
+
+      return uniqueAssignments.map((assignment) => {
         const workoutData = Array.isArray(assignment.workouts) ? assignment.workouts[0] : assignment.workouts;
         const exerciseCount = workoutData?.workout_items?.length || 0;
+
         return {
           id: assignment.workout_id,
           title: workoutData?.title || 'Rutina',
@@ -289,7 +330,7 @@ export const clientService = {
           status: getWeeklyAwareStatus(assignment),
           scheduledDate: assignment.scheduled_date
         };
-      }) || [];
+      });
     } catch (error) {
       console.error('Error fetching all workouts:', error);
       return [];
@@ -332,6 +373,7 @@ export const clientService = {
 
         return {
           id: item.id,
+          exerciseId: exerciseData?.id,
           name: exerciseData?.name || 'Ejercicio',
           sets: item.sets,
           rest: `${item.rest_time_seconds}s`,
@@ -355,7 +397,7 @@ export const clientService = {
   async finishWorkout(
     clientId: string,
     workoutId: string,
-    options: { durationMinutes?: number; isIncomplete?: boolean; completedExercises?: number; totalExercises?: number; notes?: string } = {}
+    options: { durationMinutes?: number; isIncomplete?: boolean; completedExercises?: number; totalExercises?: number; notes?: string; sessionId?: string } = {}
   ) {
     try {
       const durationMinutes = options.durationMinutes ?? 45;
@@ -385,16 +427,28 @@ export const clientService = {
         await this.appendAssignedPlanFeedback(assignedPlanId, coachNotes);
       }
 
-      // b. Guardamos la sesión en el historial
-      await supabase.from('workout_sessions').insert({
-        client_id: clientId,
-        workout_id: workoutId,
-        started_at: new Date(Date.now() - durationMinutes * 60000).toISOString(),
-        ended_at: new Date().toISOString(),
-        duration_minutes: durationMinutes,
-        notes: sessionNotes,
-        feeling_rating: isIncomplete ? null : 5
-      });
+      // b. Cerramos la sesión actual si viene informada; si no, mantenemos el comportamiento anterior.
+      if (options.sessionId) {
+        await supabase
+          .from('workout_sessions')
+          .update({
+            ended_at: new Date().toISOString(),
+            duration_minutes: durationMinutes,
+            notes: sessionNotes,
+            feeling_rating: isIncomplete ? null : 5
+          })
+          .eq('id', options.sessionId);
+      } else {
+        await supabase.from('workout_sessions').insert({
+          client_id: clientId,
+          workout_id: workoutId,
+          started_at: new Date(Date.now() - durationMinutes * 60000).toISOString(),
+          ended_at: new Date().toISOString(),
+          duration_minutes: durationMinutes,
+          notes: sessionNotes,
+          feeling_rating: isIncomplete ? null : 5
+        });
+      }
 
       return true;
     } catch (error) {
@@ -559,6 +613,88 @@ export const clientService = {
     } catch (error) {
       console.error('Error fetching client account data:', error);
       return null;
+    }
+  },
+
+  // 🚨 NUEVA: Crear una sesión de entrenamiento al iniciar el workout
+  async createWorkoutSession(clientId: string, workoutId: string): Promise<string | null> {
+    try {
+      const { data, error } = await supabase
+        .from('workout_sessions')
+        .insert({
+          client_id: clientId,
+          workout_id: workoutId,
+          started_at: new Date().toISOString(),
+          ended_at: null,
+          duration_minutes: null,
+          notes: null,
+          feeling_rating: null
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      return data?.id || null;
+    } catch (error) {
+      console.error('Error creating workout session:', error);
+      return null;
+    }
+  },
+
+  // 🚨 NUEVA: Registrar una serie completada en exercise_logs
+  async logExerciseSet(
+    sessionId: string,
+    exerciseId: string,
+    setNumber: number,
+    repsPerformed?: number,
+    weightKg?: number,
+    rpe?: number
+  ): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('exercise_logs')
+        .insert({
+          session_id: sessionId,
+          exercise_id: exerciseId,
+          set_number: setNumber,
+          reps_performed: repsPerformed || null,
+          weight_kg: weightKg || null,
+          rpe: rpe || null
+        });
+
+      if (error) throw error;
+      return true;
+    } catch (error: any) {
+      console.error('Error logging exercise set:', error);
+      // Propagar el error para que el caller (UI) pueda manejarlo y mostrar feedback.
+      throw error;
+    }
+  },
+
+  recordWeeklyCompletedSet(clientId: string, weekStart: Date = new Date()): number {
+    const normalizedWeekStart = new Date(weekStart);
+    normalizedWeekStart.setHours(0, 0, 0, 0);
+    return incrementWeeklyLocalCompletedSets(clientId, normalizedWeekStart);
+  },
+
+  // 🚨 NUEVA: Actualizar sesión con ended_at y duration
+  async finishWorkoutSession(sessionId: string, durationMinutes: number, notes?: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('workout_sessions')
+        .update({
+          ended_at: new Date().toISOString(),
+          duration_minutes: durationMinutes,
+          notes: notes || null,
+          feeling_rating: 5
+        })
+        .eq('id', sessionId);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Error finishing workout session:', error);
+      return false;
     }
   }
 };

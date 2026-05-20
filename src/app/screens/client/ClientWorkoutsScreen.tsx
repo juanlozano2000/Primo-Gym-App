@@ -99,7 +99,7 @@ export function ClientWorkoutsScreen({
               <div className="space-y-3">
                 {filteredWorkouts.map((workout, idx) => (
                   <CardWorkout
-                    key={idx} // Usamos idx porque el ID de la rutina se puede repetir si está asignada varios días
+                    key={workout.id}
                     title={workout.title}
                     exercises={workout.exercises}
                     duration={workout.duration}
