@@ -19,6 +19,7 @@ import { WorkoutDetailScreen } from "./screens/client/WorkoutDetailScreen";
 import { ClientAccountScreen } from "./screens/client/ClientAccountScreen";
 import { AddMetricsScreen } from "./screens/client/AddMetricsScreen";
 import { AddPersonalRecordScreen } from "./screens/client/AddPersonalRecordScreen";
+import { PersonalRecordsScreen } from "./screens/client/PersonalRecordsScreen";
 
 // Screens - Coach
 import { CoachHomeScreen } from "./screens/coach/CoachHomeScreen";
@@ -41,7 +42,8 @@ type ClientScreen =
   | { type: "workout-detail"; workoutId: string }
   | { type: "account" }
   | { type: "add-metrics" }
-  | { type: "add-personal-record" };
+  | { type: "add-personal-record" }
+  | { type: "personal-records" };
 
 type CoachScreen =
   | { type: "home" }
@@ -82,7 +84,8 @@ const isClientScreen = (value: unknown): value is ClientScreen => {
     value.type === "workouts" ||
     value.type === "account" ||
     value.type === "add-metrics" ||
-    value.type === "add-personal-record"
+    value.type === "add-personal-record" ||
+    value.type === "personal-records"
   ) {
     return true;
   }
@@ -244,6 +247,10 @@ function AppContent() {
     setClientScreen({ type: "add-personal-record" });
   };
 
+  const navigateToPersonalRecords = () => {
+    setClientScreen({ type: "personal-records" });
+  };
+
   const navigateBackToAccount = () => {
     setClientTab("account");
     setClientScreen({ type: "account" });
@@ -384,6 +391,7 @@ function AppContent() {
             key={accountVersion}
             onNavigateToAddMetrics={navigateToAddMetrics}
             onNavigateToAddPersonalRecord={navigateToAddPersonalRecord}
+            onNavigateToPersonalRecords={navigateToPersonalRecords}
           />
         )}
 
@@ -398,6 +406,13 @@ function AppContent() {
           <AddPersonalRecordScreen
             onBack={navigateBackToAccount}
             onSaved={handlePersonalRecordSaved}
+          />
+        )}
+
+        {clientScreen.type === "personal-records" && (
+          <PersonalRecordsScreen
+            onBack={navigateBackToAccount}
+            onNavigateToAddPersonalRecord={navigateToAddPersonalRecord}
           />
         )}
 

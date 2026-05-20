@@ -3,6 +3,8 @@ import { toast } from "sonner";
 
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
+import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
 
 interface AddPersonalRecordScreenProps {
   onBack: () => void;
@@ -10,12 +12,18 @@ interface AddPersonalRecordScreenProps {
 }
 
 export function AddPersonalRecordScreen({ onBack, onSaved }: AddPersonalRecordScreenProps) {
+  const { session } = useAuth();
   const [exerciseName, setExerciseName] = useState("");
   const [exerciseWeight, setExerciseWeight] = useState("");
   const [exerciseReps, setExerciseReps] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSaveRecord = () => {
+  const handleSaveRecord = async () => {
+    if (!session?.user?.id) {
+      toast.error("Tu sesión expiró. Iniciá sesión nuevamente");
+      return;
+    }
+
     if (!exerciseName.trim() || !exerciseWeight.trim() || !exerciseReps.trim()) {
       toast.error("Completá todos los campos");
       return;
@@ -39,28 +47,25 @@ export function AddPersonalRecordScreen({ onBack, onSaved }: AddPersonalRecordSc
     const oneRM = weight * (1 + reps / 30);
     const roundedOneRM = Math.round(oneRM * 10) / 10;
 
-    const newPR = {
-      exercise: exerciseName.trim(),
-      weight,
-      reps,
-      oneRM: roundedOneRM,
-      value: `${roundedOneRM}kg`,
-      date: new Date().toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }),
-    };
+    try {
+      const { error } = await supabase.from("personal_records").insert({
+        client_id: session.user.id,
+        exercise_name: exerciseName.trim(),
+        weight,
+        reps,
+        one_rm: roundedOneRM,
+      });
 
-    const savedPRs = localStorage.getItem("personalRecords");
-    const currentPRs = savedPRs ? JSON.parse(savedPRs) : [];
-    const updatedPRs = [...currentPRs, newPR];
+      if (error) throw error;
 
-    localStorage.setItem("personalRecords", JSON.stringify(updatedPRs));
-
-    setIsSaving(false);
-    toast.success("Récord agregado correctamente");
-    onSaved();
+      toast.success("Récord agregado correctamente");
+      onSaved();
+    } catch (error) {
+      console.error("Error saving personal record:", error);
+      toast.error("No se pudo guardar el récord");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

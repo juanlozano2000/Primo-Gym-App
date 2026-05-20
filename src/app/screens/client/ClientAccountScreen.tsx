@@ -3,22 +3,22 @@ import { CardInsight } from "../../components/CardInsight";
 import { CoachCard } from "../../components/CoachCard";
 import { CTAButton } from "../../components/CTAButton";
 import { PremiumBanner } from "../../components/PremiumBanner";
-import { Weight, Ruler, Activity, TrendingDown, User, LogOut, Settings, Plus, X, Trash2, MessageCircle, Star } from "lucide-react";
+import { Weight, Ruler, Activity, TrendingDown, User, LogOut, Settings, Plus, X, Trash2, MessageCircle, Star, ChevronRight } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { clientService } from "../../services/clientService";
+import { clientService, PersonalRecord } from "../../services/clientService";
 import { toast } from "sonner";
 import { useState, useEffect, useCallback } from "react";
 
 interface ClientAccountScreenProps {
   onNavigateToAddMetrics: () => void;
   onNavigateToAddPersonalRecord: () => void;
+  onNavigateToPersonalRecords: () => void;
 }
 
-export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPersonalRecord }: ClientAccountScreenProps) {
+export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPersonalRecord, onNavigateToPersonalRecords }: ClientAccountScreenProps) {
   const { user, logout, session } = useAuth();
   
-  const [personalRecords, setPersonalRecords] = useState<any[]>([]);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
   // 🚨 Estados reales para datos
@@ -26,14 +26,8 @@ export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPer
   const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [accountData, setAccountData] = useState<any>(null);
-
-  // Cargar récords locales
-  useEffect(() => {
-    const savedPRs = localStorage.getItem("personalRecords");
-    if (savedPRs) {
-      setPersonalRecords(JSON.parse(savedPRs));
-    }
-  }, []);
+  const [personalRecords, setPersonalRecords] = useState<PersonalRecord[]>([]);
+  const [hasMorePersonalRecords, setHasMorePersonalRecords] = useState(false);
 
   const fetchAccountData = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -55,6 +49,11 @@ export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPer
       // Métricas y Coach
       const data = await clientService.getClientAccountData(session.user.id);
       setAccountData(data);
+
+      // Récords personales (DB)
+      const records = await clientService.getPersonalRecords(session.user.id, 6);
+      setPersonalRecords(records.slice(0, 5));
+      setHasMorePersonalRecords(records.length > 5);
     } catch (error) {
       console.error("Error al cargar la cuenta:", error);
     } finally {
@@ -78,10 +77,14 @@ export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPer
     window.open(`https://wa.me/${phoneNumber}?text=${message}`, "_blank");
   };
 
-  const handleDeletePR = (index: number) => {
-    const updatedPRs = personalRecords.filter((_, i) => i !== index);
-    setPersonalRecords(updatedPRs);
-    localStorage.setItem("personalRecords", JSON.stringify(updatedPRs));
+  const handleDeletePR = async (recordId: string) => {
+    const removed = await clientService.deletePersonalRecord(recordId);
+    if (!removed) {
+      toast.error("No se pudo eliminar el récord");
+      return;
+    }
+
+    setPersonalRecords((current) => current.filter((record) => record.id !== recordId));
     toast.success("Récord eliminado");
   };
 
@@ -147,10 +150,17 @@ export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPer
           )}
         </div>
 
-        {/* Records personales (Local Storage) */}
+        {/* Records personales */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-gray-900">Records personales</h3>
+            <div>
+              <h3 className="text-gray-900">Últimos records personales</h3>
+              {hasMorePersonalRecords && (
+                <button onClick={onNavigateToPersonalRecords} className="inline-flex items-center gap-1 text-[12px] text-primary font-medium hover:underline">
+                  Ver todos <ChevronRight className="w-3 h-3" />
+                </button>
+              )}
+            </div>
             <button onClick={onNavigateToAddPersonalRecord} className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors active:scale-95">
               <Plus className="w-5 h-5" />
             </button>
@@ -161,19 +171,16 @@ export function ClientAccountScreen({ onNavigateToAddMetrics, onNavigateToAddPer
             ) : (
               <div className="space-y-1">
                 {personalRecords.map((pr, index) => (
-                  <div key={index} className="flex items-center justify-between py-2 group border-b border-gray-50 last:border-0">
+                  <div key={pr.id} className="flex items-center justify-between py-2 group border-b border-gray-50 last:border-0">
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-[15px]">{pr.exercise}</p>
+                      <p className="font-medium text-gray-900 text-[15px]">{pr.exercise_name}</p>
                       <p className="text-[12px] text-gray-500">
-                        {pr.weight && pr.reps ? `${pr.weight} kg x ${pr.reps} reps` : pr.date}
+                        {pr.weight && pr.reps ? `${pr.weight} kg x ${pr.reps} reps` : pr.created_at}
                       </p>
-                      {pr.weight && pr.reps && (
-                        <p className="text-[11px] text-gray-400">{pr.date}</p>
-                      )}
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-[18px] font-bold text-primary">{pr.value}</span>
-                      <button onClick={() => handleDeletePR(index)} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                      <span className="text-[18px] font-bold text-primary">{pr.one_rm}kg</span>
+                      <button onClick={() => handleDeletePR(pr.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>

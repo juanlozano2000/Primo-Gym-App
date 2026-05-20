@@ -9,6 +9,15 @@ export interface WorkoutSummary {
   scheduledDate: string;
 }
 
+export interface PersonalRecord {
+  id: string;
+  exercise_name: string;
+  weight: number;
+  reps: number;
+  one_rm: number;
+  created_at: string;
+}
+
 type AssignmentRecord = {
   id: string;
   workout_id: string;
@@ -514,6 +523,43 @@ export const clientService = {
       return true;
     } catch (error) {
       console.error("Error saving body metrics:", error);
+      return false;
+    }
+  },
+
+  async getPersonalRecords(clientId: string, limit?: number): Promise<PersonalRecord[]> {
+    try {
+      let query = supabase
+        .from("personal_records")
+        .select("id, exercise_name, weight, reps, one_rm, created_at")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false });
+
+      if (typeof limit === "number" && limit > 0) {
+        query = query.limit(limit);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      return (data as PersonalRecord[] | null) || [];
+    } catch (error) {
+      console.error("Error fetching personal records:", error);
+      return [];
+    }
+  },
+
+  async deletePersonalRecord(recordId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from("personal_records")
+        .delete()
+        .eq("id", recordId);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error("Error deleting personal record:", error);
       return false;
     }
   },
