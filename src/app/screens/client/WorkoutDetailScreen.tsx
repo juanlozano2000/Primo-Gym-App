@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AppBar } from "../../components/AppBar";
 import { CTAButton } from "../../components/CTAButton";
-import { CheckCircle2, Circle, Clock, Eye, List, Loader2, Pencil, Save } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Eye, List, Loader2, Pencil, Save, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { ExercisePreviewModal } from "../../components/ExercisePreviewModal";
 import { useAuth } from "../../context/AuthContext";
@@ -10,6 +10,7 @@ import { clientService } from "../../services/clientService"; // 🚨 Importado
 interface WorkoutDetailScreenProps {
   workoutId: string;
   onBack: () => void;
+  onNavigateToLinkPersonalRecord?: (workoutId: string, currentExerciseId: string, exerciseName: string) => void;
 }
 
 type WorkoutProgress = {
@@ -33,11 +34,21 @@ type SeriesEdit = {
   notes: string;
 };
 
+type PersonalRecordLink = {
+  prId: string;
+  prName: string;
+  prWeight: number;
+  percentage: number;
+  calculatedWeight: number;
+};
+
 const WORKOUT_PROGRESS_PREFIX = "spoter_workout_progress_";
+const PR_LINK_PREFIX = "spoter_pr_link_";
 
 export function WorkoutDetailScreen({
   workoutId,
   onBack,
+  onNavigateToLinkPersonalRecord,
 }: WorkoutDetailScreenProps) {
   const { session } = useAuth();
   
@@ -46,6 +57,7 @@ export function WorkoutDetailScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isFinishing, setIsFinishing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null); // 🚨 NUEVO: ID de la sesión en la BD
+  const [prLinkByExerciseId, setPRLinkByExerciseId] = useState<Record<string, PersonalRecordLink>>({}); // 🚨 NUEVO: vinculaciones de PR
 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [exerciseProgressById, setExerciseProgressById] = useState<Record<string, ExerciseProgress>>({});
@@ -136,6 +148,29 @@ export function WorkoutDetailScreen({
 
     if (workoutId) fetchWorkoutDetail();
   }, [workoutId, session?.user?.id]);
+
+  // 🚨 Efecto: Cargar vinculación de PR para ejercicio actual
+  useEffect(() => {
+    if (!session?.user?.id || !workout) return;
+    
+    const currentExercise = workout.exerciseList?.[currentExerciseIndex];
+    if (!currentExercise) return;
+
+    const prLinkKey = `${PR_LINK_PREFIX}${session.user.id}_${workoutId}_${currentExercise.id}`;
+    const savedLink = localStorage.getItem(prLinkKey);
+    
+    if (savedLink) {
+      try {
+        const link = JSON.parse(savedLink) as PersonalRecordLink;
+        setPRLinkByExerciseId((prev) => ({
+          ...prev,
+          [currentExercise.id]: link,
+        }));
+      } catch (e) {
+        console.warn("[Workout] Vinculación de PR corrupta, ignorando.");
+      }
+    }
+  }, [currentExerciseIndex, workout, workoutId, session?.user?.id]);
 
   // 🚨 Efecto: Limpiar interval al desmontar o cambiar de ejercicio
   useEffect(() => {
@@ -616,20 +651,27 @@ export function WorkoutDetailScreen({
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[13px] text-gray-600 mb-1">Series</p>
-                <p className="text-[20px] font-bold text-gray-900">{currentExercise.sets}</p>
+            <div className="grid grid-cols-4 gap-3 mb-6">
+              <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[12px] text-gray-600 mb-1">Series</p>
+                <p className="text-[18px] font-bold text-gray-900">{currentExercise.sets}</p>
               </div>
-              <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[13px] text-gray-600 mb-1">Reps</p>
-                <p className="text-[18px] font-bold text-gray-900 truncate px-1">
-                  {currentExercise.seriesData?.[0]?.reps ? `${currentExercise.seriesData[0].reps} reps` : "-"}
+              <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[12px] text-gray-600 mb-1">Reps</p>
+                <p className="text-[16px] font-bold text-gray-900 truncate px-1">
+                  {currentExercise.seriesData?.[0]?.reps ? `${currentExercise.seriesData[0].reps}` : "-"}
                 </p>
               </div>
-              <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                <p className="text-[13px] text-gray-600 mb-1">Descanso</p>
-                <p className="text-[20px] font-bold text-gray-900">{currentExercise.rest}</p>
+              <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[12px] text-gray-600 mb-1">Descanso</p>
+                <p className="text-[16px] font-bold text-gray-900">{currentExercise.rest}</p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[12px] text-gray-600 mb-1">Peso</p>
+                <p className="text-[16px] font-bold text-gray-900">
+                  {prLinkByExerciseId[currentExercise.id]?.calculatedWeight.toFixed(2) || "-"}
+                  {prLinkByExerciseId[currentExercise.id]?.calculatedWeight && "kg"}
+                </p>
               </div>
             </div>
 
@@ -642,6 +684,14 @@ export function WorkoutDetailScreen({
                 Ver detalle por serie
               </button>
             )}
+
+            <button
+              onClick={() => onNavigateToLinkPersonalRecord?.(workoutId, currentExercise.id, currentExercise.name)}
+              className="w-full mb-6 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-600 font-medium text-[14px] flex items-center justify-center gap-2 hover:bg-blue-100 transition-all active:scale-[0.98]"
+            >
+              <Link2 className="w-4 h-4" />
+              Enlazar record personal
+            </button>
 
             {isResting && (
               <div className="mb-6 p-6 bg-accent/10 rounded-xl text-center border border-accent/20">

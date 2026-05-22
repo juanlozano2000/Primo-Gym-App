@@ -20,6 +20,7 @@ import { ClientAccountScreen } from "./screens/client/ClientAccountScreen";
 import { AddMetricsScreen } from "./screens/client/AddMetricsScreen";
 import { AddPersonalRecordScreen } from "./screens/client/AddPersonalRecordScreen";
 import { PersonalRecordsScreen } from "./screens/client/PersonalRecordsScreen";
+import { LinkPersonalRecordScreen } from "./screens/client/LinkPersonalRecordScreen";
 
 // Screens - Coach
 import { CoachHomeScreen } from "./screens/coach/CoachHomeScreen";
@@ -43,7 +44,8 @@ type ClientScreen =
   | { type: "account" }
   | { type: "add-metrics" }
   | { type: "add-personal-record" }
-  | { type: "personal-records" };
+  | { type: "personal-records" }
+  | { type: "link-personal-record"; workoutId: string; currentExerciseId: string; exerciseName: string };
 
 type CoachScreen =
   | { type: "home" }
@@ -92,6 +94,10 @@ const isClientScreen = (value: unknown): value is ClientScreen => {
 
   if (value.type === "workout-detail") {
     return typeof value.workoutId === "string";
+  }
+
+  if (value.type === "link-personal-record") {
+    return typeof value.workoutId === "string" && typeof value.currentExerciseId === "string" && typeof value.exerciseName === "string";
   }
 
   return false;
@@ -251,6 +257,10 @@ function AppContent() {
     setClientScreen({ type: "personal-records" });
   };
 
+  const navigateToLinkPersonalRecord = (workoutId: string, currentExerciseId: string, exerciseName: string) => {
+    setClientScreen({ type: "link-personal-record", workoutId, currentExerciseId, exerciseName });
+  };
+
   const navigateBackToAccount = () => {
     setClientTab("account");
     setClientScreen({ type: "account" });
@@ -383,6 +393,7 @@ function AppContent() {
           <WorkoutDetailScreen
             workoutId={clientScreen.workoutId}
             onBack={navigateToClientWorkouts}
+            onNavigateToLinkPersonalRecord={navigateToLinkPersonalRecord}
           />
         )}
         
@@ -413,6 +424,24 @@ function AppContent() {
           <PersonalRecordsScreen
             onBack={navigateBackToAccount}
             onNavigateToAddPersonalRecord={navigateToAddPersonalRecord}
+          />
+        )}
+
+        {clientScreen.type === "link-personal-record" && (
+          <LinkPersonalRecordScreen
+            workoutId={clientScreen.workoutId}
+            currentExerciseId={clientScreen.currentExerciseId}
+            exerciseName={clientScreen.exerciseName}
+            onBack={() => setClientScreen({ type: "workout-detail", workoutId: clientScreen.workoutId })}
+            onConfirm={(prLink) => {
+              // Guardar vinculación en localStorage
+              if (user?.id) {
+                const PR_LINK_PREFIX = "spoter_pr_link_";
+                const prLinkKey = `${PR_LINK_PREFIX}${user.id}_${clientScreen.workoutId}_${clientScreen.currentExerciseId}`;
+                localStorage.setItem(prLinkKey, JSON.stringify(prLink));
+              }
+              setClientScreen({ type: "workout-detail", workoutId: clientScreen.workoutId });
+            }}
           />
         )}
 
