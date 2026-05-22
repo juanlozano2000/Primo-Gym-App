@@ -64,7 +64,7 @@ export function WorkoutDetailScreen({
   const [showConfirmDiscardModal, setShowConfirmDiscardModal] = useState(false);
   const [showConfirmIncompleteFinishModal, setShowConfirmIncompleteFinishModal] = useState(false);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
-  const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const fetchWorkoutDetail = async () => {
@@ -156,27 +156,6 @@ export function WorkoutDetailScreen({
     setRestTimer(0);
   }, [currentExerciseIndex]);
 
-  // 🚨 Efecto: Guardar progreso automáticamente
-  useEffect(() => {
-    if (!session?.user?.id || !workout) return;
-
-    const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
-    const completedExercises = Object.entries(exerciseProgressById)
-      .filter(([, progress]) => progress.isCompleted)
-      .map(([exerciseId]) => exerciseId);
-    const progress: WorkoutProgress = {
-      workoutId,
-      currentExerciseIndex,
-      exerciseProgressById,
-      seriesEditsByExerciseId,
-      completedExercises,
-      timestamp: Date.now(),
-    };
-
-    localStorage.setItem(progressKey, JSON.stringify(progress));
-    setHasUnsavedProgress(false);
-  }, [currentExerciseIndex, exerciseProgressById, seriesEditsByExerciseId, workoutId, session?.user?.id, workout]);
-
   // 🚨 Efecto: Advertencia al refrescar si hay progreso
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -233,6 +212,40 @@ export function WorkoutDetailScreen({
   const hasSeriesData = currentExercise.seriesData && currentExercise.seriesData.length > 0;
   const currentExerciseSeriesData = currentExerciseSeriesEdits || currentExercise.seriesData;
 
+  function persistWorkoutProgress(overrides?: {
+    currentExerciseIndex?: number;
+    exerciseProgressById?: Record<string, ExerciseProgress>;
+    seriesEditsByExerciseId?: Record<string, SeriesEdit[]>;
+  }) {
+    if (!session?.user?.id || !workout) {
+      return;
+    }
+
+    const nextCurrentExerciseIndex = overrides?.currentExerciseIndex ?? currentExerciseIndex;
+    const nextExerciseProgressById = overrides?.exerciseProgressById ?? exerciseProgressById;
+    const nextSeriesEditsByExerciseId = overrides?.seriesEditsByExerciseId ?? seriesEditsByExerciseId;
+    const progressKey = `${WORKOUT_PROGRESS_PREFIX}${session.user.id}_${workoutId}`;
+    const completedExercisesNext = Object.entries(nextExerciseProgressById)
+      .filter(([, progress]) => progress.isCompleted)
+      .map(([exerciseId]) => exerciseId);
+
+    const progress: WorkoutProgress = {
+      workoutId,
+      currentExerciseIndex: nextCurrentExerciseIndex,
+      exerciseProgressById: nextExerciseProgressById,
+      seriesEditsByExerciseId: nextSeriesEditsByExerciseId,
+      completedExercises: completedExercisesNext,
+      timestamp: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(progressKey, JSON.stringify(progress));
+      setHasUnsavedProgress(false);
+    } catch (error) {
+      console.error("[persistWorkoutProgress] Error saving:", error);
+    }
+  }
+
   const openSeriesEditModal = (exercise: any) => {
     const totalSeries = Math.max(1, Number(exercise.sets) || exercise.seriesData?.length || 0);
     const existingEdits = seriesEditsByExerciseId[exercise.id] || [];
@@ -267,12 +280,18 @@ export function WorkoutDetailScreen({
 
     const exerciseName = editingExercise.name;
     const savedSeries = editingSeriesDraft;
+    const nextSeriesEditsByExerciseId = {
+      ...seriesEditsByExerciseId,
+      [editingExercise.id]: savedSeries,
+    };
 
     setSeriesEditsByExerciseId((prev) => ({
       ...prev,
       [editingExercise.id]: savedSeries,
     }));
-    setHasUnsavedProgress(true);
+    persistWorkoutProgress({
+      seriesEditsByExerciseId: nextSeriesEditsByExerciseId,
+    });
     setIsSeriesEditModalOpen(false);
     setEditingExercise(null);
 
@@ -328,8 +347,17 @@ export function WorkoutDetailScreen({
   const handleNextSet = () => {
     if (isExerciseCompleted) return;
 
+    const userId = session?.user?.id;
+
     if (isLastSet) {
-      // Última serie: marcar ejercicio completo sin perder el detalle de las series previas
+      const nextExerciseProgressById = {
+        ...exerciseProgressById,
+        [currentExercise.id]: {
+          completedSets: totalSets,
+          isCompleted: true,
+        },
+      };
+
       setExerciseProgressById((prev) => ({
         ...prev,
         [currentExercise.id]: {
@@ -337,11 +365,11 @@ export function WorkoutDetailScreen({
           isCompleted: true,
         },
       }));
-      setHasUnsavedProgress(true);
-      
-      // 🚨 NUEVO: Registrar esta serie en exercise_logs
-      if (sessionId) {
-        // Obtener data de la última serie si existe
+      persistWorkoutProgress({
+        exerciseProgressById: nextExerciseProgressById,
+      });
+
+      if (sessionId && userId) {
         const lastSeriesData = currentExerciseSeriesData?.[totalSets - 1];
         clientService.logExerciseSet(
           sessionId,
@@ -354,14 +382,21 @@ export function WorkoutDetailScreen({
           console.error("Error logging final set:", err);
           toast.error('No se pudo guardar la serie final en el servidor');
         });
-        clientService.recordWeeklyCompletedSet(session.user.id);
+        clientService.recordWeeklyCompletedSet(userId);
       }
-      
+
       toast.success("¡Ejercicio completado!");
       setRestTimer(0);
       setIsResting(false);
     } else {
-      // No es la última serie: avanzar a la siguiente
+      const nextExerciseProgressById = {
+        ...exerciseProgressById,
+        [currentExercise.id]: {
+          completedSets: currentSet,
+          isCompleted: false,
+        },
+      };
+
       setExerciseProgressById((prev) => ({
         ...prev,
         [currentExercise.id]: {
@@ -369,10 +404,11 @@ export function WorkoutDetailScreen({
           isCompleted: false,
         },
       }));
-      setHasUnsavedProgress(true);
-      
-      // 🚨 NUEVO: Registrar esta serie en exercise_logs
-      if (sessionId) {
+      persistWorkoutProgress({
+        exerciseProgressById: nextExerciseProgressById,
+      });
+
+      if (sessionId && userId) {
         const seriesData = currentExerciseSeriesData?.[currentSet - 1];
         clientService.logExerciseSet(
           sessionId,
@@ -385,21 +421,19 @@ export function WorkoutDetailScreen({
           console.error("Error logging set:", err);
           toast.error('No se pudo guardar la serie en el servidor');
         });
-        clientService.recordWeeklyCompletedSet(session.user.id);
+        clientService.recordWeeklyCompletedSet(userId);
       }
-      
+
       toast.success(`Serie ${currentSet} completada`);
-      
-      // Limpiar interval anterior si existe
+
       if (restIntervalRef.current) {
         clearInterval(restIntervalRef.current);
       }
-      
-      // Iniciar descanso
+
       const restSeconds = parseInt(currentExercise.rest) || 60;
       setRestTimer(restSeconds);
       setIsResting(true);
-      
+
       restIntervalRef.current = setInterval(() => {
         setRestTimer((prev) => {
           if (prev <= 1) {
@@ -422,8 +456,9 @@ export function WorkoutDetailScreen({
         clearInterval(restIntervalRef.current);
         restIntervalRef.current = null;
       }
-      setCurrentExerciseIndex(currentExerciseIndex + 1);
-      setHasUnsavedProgress(true);
+      const nextCurrentExerciseIndex = currentExerciseIndex + 1;
+      setCurrentExerciseIndex(nextCurrentExerciseIndex);
+      persistWorkoutProgress({ currentExerciseIndex: nextCurrentExerciseIndex });
       setIsResting(false);
     }
   };
@@ -434,8 +469,9 @@ export function WorkoutDetailScreen({
         clearInterval(restIntervalRef.current);
         restIntervalRef.current = null;
       }
-      setCurrentExerciseIndex(currentExerciseIndex - 1);
-      setHasUnsavedProgress(true);
+      const nextCurrentExerciseIndex = currentExerciseIndex - 1;
+      setCurrentExerciseIndex(nextCurrentExerciseIndex);
+      persistWorkoutProgress({ currentExerciseIndex: nextCurrentExerciseIndex });
       setIsResting(false);
     }
   };
@@ -445,6 +481,9 @@ export function WorkoutDetailScreen({
     if (!session?.user?.id) return;
     
     setIsFinishing(true);
+    // 🚨 Guardar progreso local antes de finalizar
+    persistWorkoutProgress();
+    
     // Suponemos que cada ejercicio le tomó aprox 10 min
     const estimatedMinutes = workout.exerciseList.length * 10;
     const completedExercisesCount = completedExercises.length;
